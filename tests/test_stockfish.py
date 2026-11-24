@@ -56,7 +56,7 @@ class StockfishTests(unittest.TestCase):
                 self.assertEqual(engine.results.get_nowait(), (board.fen(), chess.Move.from_uci('e2e4'), None))
                 request = http.call_args.args[0]
                 self.assertEqual(parse_qs(urlsplit(request.full_url).query)['depth'], [str(depth)])
-                self.assertEqual(request.get_header('X-api-key'), key or None)
+                self.assertEqual(parse_qs(urlsplit(request.full_url).query).get('key'), [key] if key else None)
 
     def test_stale_engine_move_is_rejected(self):
         controller = Controller(chess.BLACK, None)

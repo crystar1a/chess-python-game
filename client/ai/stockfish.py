@@ -4,6 +4,7 @@ import sys
 import threading
 from pathlib import Path
 from http.client import HTTPException
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -41,18 +42,47 @@ class Engine:
         self.lock = threading.Lock()
 
     def online_move(self, board):
-        query = urlencode({'fen': board.fen(), 'depth': self.depth})
-        headers = {'X-API-Key': self.api_key} if self.api_key else {}
-        request = Request(f'{API_URL}?{query}', headers=headers)
-        with urlopen(request, timeout=12) as response:
-            data = json.load(response)
+        params = {'fen': board.fen(), 'depth': self.depth}
+        headers = {'User-Agent': 'PixelChess/1.0', 'Accept': 'application/json'}
+        if self.api_key:
+            params['key'] = self.api_key
+        for attempt in range(2):
+            request = Request(f'{API_URL}?{urlencode(params)}', headers=headers)
+            try:
+                with urlopen(request, timeout=20) as response:
+                    data = json.load(response)
+                break
+            except HTTPError as exc:
+                if exc.code in (401, 403) and not attempt and self.api_key and not self.closed:
+                    exc.close()
+                    del params['key']
+                    continue
+                if exc.code == 403:
+                    mode = 'key' if 'key' in params else 'guest'
+                    with exc:
+                        try:
+                            body = json.loads(exc.read(8192))
+                        except (ValueError, UnicodeError):
+                            body = None
+                    detail = body.get('data') if isinstance(body, dict) else None
+                    reason = str(detail)[:180] if detail else 'Access refused.'
+                    raise ValueError(f'HTTP 403 ({mode}): {reason}') from exc
+                if attempt or exc.code not in (502, 503, 504) or self.closed:
+                    raise
+            except (URLError, TimeoutError, ConnectionError, HTTPException):
+                if attempt or self.closed:
+                    raise
         if not isinstance(data, dict) or data.get('success') is not True:
-            raise ValueError('StockfishOnline rejected the request.')
+            reason = data.get('data') if isinstance(data, dict) else None
+            raise ValueError(str(reason or 'Request rejected.')[:180])
         best = data.get('bestmove')
         tokens = best.split() if isinstance(best, str) else []
         if len(tokens) < 2 or tokens[0] != 'bestmove':
             raise ValueError('Invalid StockfishOnline response.')
-        return board.parse_uci(tokens[1])
+        move = board.parse_uci(tokens[1])
+        if 'key' not in params:
+            self.api_key = ''
+        return move
 
     def start(self, board):
         snapshot = board.copy()
@@ -73,7 +103,10 @@ class Engine:
                 result = engine.play(snapshot, chess.engine.Limit(depth=self.depth))
                 self.results.put((snapshot.fen(), result.move, None))
             except (HTTPException, ValueError, OSError, chess.engine.EngineError, RuntimeError) as exc:
-                self.results.put((snapshot.fen(), None, str(exc)))
+                message = str(exc) or type(exc).__name__
+                if self.api_key:
+                    message = message.replace(self.api_key, '[redacted]')
+                self.results.put((snapshot.fen(), None, message))
             finally:
                 if engine:
                     try:

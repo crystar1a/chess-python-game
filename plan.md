@@ -101,6 +101,9 @@ Mã bản bot được tổ chức trong `client/game/`, `client/ai/`, `client/g
 
 ### Kiểm tra tiến độ hiện tại
 
+- Ngày 25/11/2026, bot ưu tiên engine local do người chơi tự tải. Khi thiếu engine, bot gửi FEN và độ sâu Easy 3, Normal 8 hoặc Hard 15 qua HTTPS GET tới StockfishOnline. Nếu có khóa trong `client/ai/stockfish/api.txt`, bot thêm tham số URL `key` để yêu cầu ưu tiên. Khi tệp thiếu hoặc trống, bot chơi ở chế độ khách.
+- Nếu yêu cầu đầu tiên có khóa bị trả về HTTP 401 hoặc 403, bot thử lại một lần với quyền khách. Nếu thành công, bot tiếp tục ván ở chế độ khách. Nếu dịch vụ trả lỗi 403 kèm JSON, giao diện hiển thị lý do trong trường `data`. Đã kiểm tra luồng thử lại bằng phản hồi mô phỏng. Việc dịch vụ thực sự cấp ưu tiên vẫn cần xác nhận bằng một ván trực tuyến.
+
 - Ngày 25/11/2026, đã thống nhất độ sâu cho cả local và REST. Bộ kiểm thử tự động đạt **14/14**, gồm kiểm tra tham số độ sâu ở cả hai nhánh bằng mock.
 
 - Ngày 24/11/2026, chạy `python -m unittest discover -s tests -v` bằng môi trường ảo Windows. **13/13 kiểm thử đạt**, gồm nước hợp lệ và sai, đồng hồ và các ca hết giờ, ánh xạ ô theo hai hướng bàn cờ, chọn và bỏ chọn quân, ba cấu hình Stockfish, đường dẫn engine, lỗi khởi động và kết quả engine đã cũ.
