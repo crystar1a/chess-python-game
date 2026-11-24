@@ -76,12 +76,12 @@ Mã bản bot được tổ chức trong `client/game/`, `client/ai/`, `client/g
 
 ## Thiết kế bản chơi với bot
 
-1. Khởi tạo pygame-ce; khi chọn chơi với bot, cho chọn độ khó Easy, Normal hoặc Hard, sau đó chọn thời gian 5, 10, 15 phút hoặc không tính thời gian và màu trắng hoặc đen, rồi bắt đầu ván. Cấu hình sức mạnh Stockfish khác nhau cho từng mức. Vẽ bàn cờ 8×8, scale ảnh quân theo ô và đặt quân của người chơi ở phía dưới. Xác định phép chuyển giữa tọa độ màn hình và ô python-chess cho cả hai hướng.
+1. Khởi tạo pygame-ce; khi chọn chơi với bot, cho chọn độ khó Easy, Normal hoặc Hard, sau đó chọn thời gian 5, 10, 15 phút hoặc không tính thời gian và màu trắng hoặc đen, rồi bắt đầu ván. Cả engine local và REST API dùng chung độ sâu tìm kiếm Easy 3, Normal 8 và Hard 15 ply. Vẽ bàn cờ 8×8, scale ảnh quân theo ô và đặt quân của người chơi ở phía dưới. Xác định phép chuyển giữa tọa độ màn hình và ô python-chess cho cả hai hướng.
 2. Chọn quân của người chơi bằng chuột và đánh dấu các ô đích hợp lệ. Quân trắng đi trước; nếu người chơi chọn đen, bot đi nước đầu. Chỉ thực hiện nước đi được python-chess xác nhận; bỏ qua thao tác ngoài bàn cờ và nước sai.
 3. Khi phong cấp, cho chọn hậu, xe, tượng hoặc mã trước khi gửi nước đi. Hiển thị lượt và kết quả ván.
-4. Gửi bản sao vị trí cho Stockfish với giới hạn thời gian suy nghĩ. Chạy tác vụ engine ngoài vòng lặp giao diện; khóa nước đi của người chơi khi chờ. Kiểm tra kết quả engine hợp lệ và còn thuộc ván hiện tại.
+4. Gửi bản sao vị trí cho Stockfish với giới hạn độ sâu đã chọn. Chạy tác vụ engine ngoài vòng lặp giao diện; khóa nước đi của người chơi khi chờ. Kiểm tra kết quả engine hợp lệ và còn thuộc ván hiện tại.
 5. Tích hợp các tệp trong `assets/sounds/` cho sự kiện tương ứng: bắt đầu và kết thúc ván, nước đi của người chơi và bot, bắt quân, nhập thành, chiếu và phong cấp. Các âm thanh khác dùng khi có sự kiện phù hợp. Nếu mixer hoặc tệp âm thanh lỗi, thông báo hợp lý và tiếp tục không âm thanh.
-6. Hiển thị lỗi rõ ràng nếu engine không có hoặc không khởi động được; cho phép thoát hoặc bắt đầu lại sau khi khắc phục. Khi thoát hoặc bắt đầu lại, bỏ qua kết quả cũ và đóng tiến trình an toàn.
+6. Khi thiếu engine local, gọi stockfish.online qua HTTPS với API key tùy chọn trong `client/ai/stockfish/api.txt`. Hiển thị lỗi khi engine khởi động thất bại hoặc yêu cầu REST gặp lỗi và cho phép thoát hoặc bắt đầu lại sau khi khắc phục. Khi thoát hoặc bắt đầu lại, bỏ qua kết quả cũ và đóng tiến trình an toàn.
 7. Hiển thị chiếu hết, hết nước đi và hòa. Bản nháp có thể tự nhận hòa khi python-chess xác định có quyền yêu cầu hòa; thông báo rõ quyết định này.
 8. Với ván có tính giờ, mỗi bên có thời gian riêng bằng mức đã chọn, không cộng thêm thời gian sau nước đi. Đồng hồ của bên đến lượt chạy, kể cả khi bot suy nghĩ hoặc người chơi chọn phong cấp; đổi đồng hồ sau nước đi hợp lệ và dừng khi ván kết thúc. Hết giờ thì bên hết giờ thua, trừ khi đối thủ không thể chiếu hết bằng bất kỳ chuỗi nước đi hợp lệ nào thì ván hòa. Với lựa chọn không tính thời gian, không chạy đồng hồ. Bắt đầu lại đặt lại đồng hồ theo lựa chọn của ván.
 
@@ -100,6 +100,8 @@ Mã bản bot được tổ chức trong `client/game/`, `client/ai/`, `client/g
 - [ ] Cập nhật TCD và UCD sau khi bản bot đạt tiêu chí. Triển khai và kiểm thử chế độ chơi mạng theo các mốc bên dưới.
 
 ### Kiểm tra tiến độ hiện tại
+
+- Ngày 25/11/2026, đã thống nhất độ sâu cho cả local và REST. Bộ kiểm thử tự động đạt **14/14**, gồm kiểm tra tham số độ sâu ở cả hai nhánh bằng mock.
 
 - Ngày 24/11/2026, chạy `python -m unittest discover -s tests -v` bằng môi trường ảo Windows. **13/13 kiểm thử đạt**, gồm nước hợp lệ và sai, đồng hồ và các ca hết giờ, ánh xạ ô theo hai hướng bàn cờ, chọn và bỏ chọn quân, ba cấu hình Stockfish, đường dẫn engine, lỗi khởi động và kết quả engine đã cũ.
 - Đã kiểm tra Stockfish thực tế trả nước hợp lệ trước khi chuyển thư mục engine; đường dẫn mới đã được kiểm thử tồn tại. Chưa ghi nhận kiểm thử một ván hoàn chỉnh sau các thay đổi giao diện và cấu trúc.

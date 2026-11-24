@@ -115,6 +115,10 @@ def run():
                 sounds.play(sound)
             draw_board(screen, game, selected, pieces)
             centered_label('Pixel Chess', BOARD + 120, 20)
+            if controller.engine.online and not controller.engine.api_key:
+                centered_label('Online bot (guest)', BOARD + 120, 60, use_font=small)
+                centered_label('Add a key to api.txt', BOARD + 120, 84, use_font=small)
+                centered_label('for priority access.', BOARD + 120, 108, use_font=small)
             draw_players(screen, game, pieces, font, small, clock_font, difficulty,
                          stopped=bool(game.result or controller.error))
             if game.result or controller.error:

@@ -25,7 +25,10 @@ class Controller:
                 return None
             self.thinking = False
             if error:
-                self.error = 'Stockfish unavailable. Check client/ai/stockfish and start a new game.'
+                if self.engine.online:
+                    self.error = 'StockfishOnline unavailable. Check your connection or install the local engine.'
+                else:
+                    self.error = 'Stockfish unavailable. Check client/ai/stockfish and start a new game.'
             elif fen == game.board.fen() and move in game.board.legal_moves:
                 return game.move(move)
             else:

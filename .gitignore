@@ -3,3 +3,5 @@
 __pycache__/
 *.py[cod]
 CLAUDE.md
+/client/ai/stockfish/api.txt
+/client/ai/stockfish/stockfish*
