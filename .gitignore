@@ -5,3 +5,5 @@ __pycache__/
 CLAUDE.md
 /client/ai/stockfish/api.txt
 /client/ai/stockfish/stockfish*
+TCP_UDP_BUILD_PLAN.md
+NETWORK_ANALYSIS.md
