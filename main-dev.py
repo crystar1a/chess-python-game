@@ -66,6 +66,7 @@ def run():
                             if sound:
                                 sounds.play('game-end' if game.result else sound)
                             promotion = selected = None
+                            game.board.turn = color
                     continue
                 target = square_at(event.pos, color)
                 if target is None:
