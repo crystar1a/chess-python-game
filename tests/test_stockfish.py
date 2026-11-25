@@ -23,7 +23,7 @@ class StockfishTests(unittest.TestCase):
 
     @patch('client.ai.stockfish.engine_path', return_value=__file__)
     def test_each_difficulty_configures_engine(self, _path):
-        for difficulty, depth in [('Easy', 3), ('Normal', 8), ('Hard', 15)]:
+        for difficulty, depth in [('Easy', 5), ('Normal', 10), ('Hard', 15)]:
             with self.subTest(difficulty=difficulty), patch('client.ai.stockfish.chess.engine.SimpleEngine.popen_uci') as open_engine:
                 engine = Engine(difficulty)
                 engine.start(chess.Board())
@@ -46,7 +46,7 @@ class StockfishTests(unittest.TestCase):
         from io import BytesIO
 
         with patch('client.ai.stockfish.API_KEY_FILE') as key_file:
-            for difficulty, depth, key in [('Easy', 3, ''), ('Normal', 8, 'test-key'), ('Hard', 15, '')]:
+            for difficulty, depth, key in [('Easy', 5, ''), ('Normal', 10, 'test-key'), ('Hard', 15, '')]:
                 key_file.read_text.return_value = key
                 http.return_value = BytesIO(b'{"success":true,"bestmove":"bestmove e2e4 ponder e7e5"}')
                 engine = Engine(difficulty)

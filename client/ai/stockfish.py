@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 import chess.engine
 
 
-SEARCH_DEPTHS = {'Easy': 3, 'Normal': 8, 'Hard': 15}
+SEARCH_DEPTHS = {'Easy': 5, 'Normal': 10, 'Hard': 15}
 API_URL = 'https://stockfish.online/api/s/v2.php'
 ENGINE_DIR = Path(__file__).resolve().parent / 'stockfish'
 API_KEY_FILE = ENGINE_DIR / 'api.txt'

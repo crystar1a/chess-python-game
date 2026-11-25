@@ -76,7 +76,7 @@ Mã bản bot được tổ chức trong `client/game/`, `client/ai/`, `client/g
 
 ## Thiết kế bản chơi với bot
 
-1. Khởi tạo pygame-ce; khi chọn chơi với bot, cho chọn độ khó Easy, Normal hoặc Hard, sau đó chọn thời gian 5, 10, 15 phút hoặc không tính thời gian và màu trắng hoặc đen, rồi bắt đầu ván. Cả engine local và REST API dùng chung độ sâu tìm kiếm Easy 3, Normal 8 và Hard 15 ply. Vẽ bàn cờ 8×8, scale ảnh quân theo ô và đặt quân của người chơi ở phía dưới. Xác định phép chuyển giữa tọa độ màn hình và ô python-chess cho cả hai hướng.
+1. Khởi tạo pygame-ce; khi chọn chơi với bot, cho chọn độ khó Easy, Normal hoặc Hard, sau đó chọn thời gian 5, 10, 15 phút hoặc không tính thời gian và màu trắng hoặc đen, rồi bắt đầu ván. Cả engine local và REST API dùng chung độ sâu tìm kiếm Easy 5, Normal 10 và Hard 15 ply. Vẽ bàn cờ 8×8, scale ảnh quân theo ô và đặt quân của người chơi ở phía dưới. Xác định phép chuyển giữa tọa độ màn hình và ô python-chess cho cả hai hướng.
 2. Chọn quân của người chơi bằng chuột và đánh dấu các ô đích hợp lệ. Quân trắng đi trước; nếu người chơi chọn đen, bot đi nước đầu. Chỉ thực hiện nước đi được python-chess xác nhận; bỏ qua thao tác ngoài bàn cờ và nước sai.
 3. Khi phong cấp, cho chọn hậu, xe, tượng hoặc mã trước khi gửi nước đi. Hiển thị lượt và kết quả ván.
 4. Gửi bản sao vị trí cho Stockfish với giới hạn độ sâu đã chọn. Chạy tác vụ engine ngoài vòng lặp giao diện; khóa nước đi của người chơi khi chờ. Kiểm tra kết quả engine hợp lệ và còn thuộc ván hiện tại.
