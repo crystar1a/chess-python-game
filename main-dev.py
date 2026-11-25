@@ -66,6 +66,7 @@ def run():
                             if sound:
                                 sounds.play('game-end' if game.result else sound)
                             promotion = selected = None
+                            game.board.clear_stack()
                             game.board.turn = color
                     continue
                 target = square_at(event.pos, color)
@@ -78,12 +79,14 @@ def run():
                 elif target == selected:
                     selected = None
                 else:
+                    game.board.clear_stack()
                     game.board.turn = color
                     move = chess.Move(selected, target)
                     if move in game.board.legal_moves:
                         sound = game.move(move)
                         if sound:
                             sounds.play('game-end' if game.result else sound)
+                        game.board.clear_stack()
                         game.board.turn = color
                         selected = None
                     else:

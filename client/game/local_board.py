@@ -34,7 +34,7 @@ class Game:
         board.push(move)
         if board.is_check():
             sound = 'move-check'
-        outcome = board.outcome()
+        outcome = board.outcome(claim_draw=True)
         if outcome:
             self.result = f"{outcome.result()} - {outcome.termination.name.replace('_', ' ').title()}"
         self.updated = time.monotonic()
