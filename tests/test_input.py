@@ -32,3 +32,17 @@ class MouseTests(unittest.TestCase):
         self.assertIsNone(promotion)
         self.assertEqual(sound, 'move-self')
         self.assertEqual(game.board.peek(), chess.Move.from_uci('e2e4'))
+
+    def test_select_square_detects_promotion(self):
+        game = Game(chess.WHITE, None)
+        game.board = chess.Board('8/4P3/8/8/8/8/8/8 w - - 0 1')
+        # Select pawn on E7
+        selected, promotion, sound = select_square(square_pos(chess.E7, game.player), game, None)
+        self.assertEqual(selected, chess.E7)
+        self.assertIsNone(promotion)
+        self.assertIsNone(sound)
+        # Click E8 (promotion square)
+        selected, promotion, sound = select_square(square_pos(chess.E8, game.player), game, selected)
+        self.assertEqual(selected, chess.E7)
+        self.assertEqual(promotion, (chess.E7, chess.E8))
+        self.assertIsNone(sound)

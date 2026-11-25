@@ -2,7 +2,7 @@ import chess
 import pygame
 
 from client.game.game_controller import Controller
-from client.gui.board_view import BOARD, PLAYER_BAR_HEIGHT, SIZE, draw_board
+from client.gui.board_view import BOARD, PLAYER_BAR_HEIGHT, SIZE, draw_board, promotion_rects, draw_promotion_bubble, square_pos
 from client.gui.hud import draw_players
 from client.gui.resources import ROOT, Sounds, load_pieces
 from client.input.mouse_controller import select_square
@@ -76,8 +76,10 @@ def run():
                     if game.result or controller.error or game.board.turn != game.player or controller.thinking:
                         continue
                     if promotion:
-                        for i, piece in enumerate((chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT)):
-                            if pygame.Rect(BOARD + 15, 300 + i * 41, 205, 38).collidepoint(event.pos):
+                        bubble, rects, arrow_x = promotion_rects(promotion[1], game.player, screen.get_width(), screen.get_height())
+                        for i, rect in enumerate(rects):
+                            if rect.collidepoint(event.pos):
+                                piece = (chess.ROOK, chess.KNIGHT, chess.BISHOP, chess.QUEEN)[i]
                                 sound = game.move(chess.Move(promotion[0], promotion[1], promotion=piece))
                                 if sound:
                                     sounds.play('game-end' if game.result else sound)
@@ -131,9 +133,8 @@ def run():
                     line = (line + ' ' + word).strip()
                 centered_label(line, BOARD + 120, y, use_font=small)
             elif promotion:
-                centered_label('Promote to:', BOARD + 120, 267)
-                for i, name in enumerate(('Queen', 'Rook', 'Bishop', 'Knight')):
-                    button(pygame.Rect(BOARD + 15, 300 + i * 41, 205, 38), name)
+                bubble, rects, arrow_x = promotion_rects(promotion[1], game.player, screen.get_width(), screen.get_height())
+                draw_promotion_bubble(screen, bubble, rects, pieces, game.player, arrow_x, pygame.mouse.get_pos())
             button(pygame.Rect(BOARD + 25, 490, 185, 42), 'New game / menu')
         pygame.display.flip()
         clock.tick(60)
