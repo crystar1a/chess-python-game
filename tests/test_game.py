@@ -58,6 +58,27 @@ class GameTests(unittest.TestCase):
             game.tick()
             self.assertEqual(game.result, 'White wins on time')
 
+    def test_promotion_queen(self):
+        game = Game(chess.WHITE, None)
+        game.board = chess.Board('8/4P3/8/8/8/8/8/8 w - - 0 1')
+        move = chess.Move(chess.E7, chess.E8, promotion=chess.QUEEN)
+        self.assertIn(move, game.board.legal_moves)
+        sound = game.move(move)
+        self.assertEqual(sound, 'promote')
+        self.assertEqual(game.board.piece_at(chess.E8).piece_type, chess.QUEEN)
+        self.assertEqual(game.board.piece_at(chess.E8).color, chess.WHITE)
+        self.assertIsNone(game.board.piece_at(chess.E7))
+
+    def test_promotion_all_four_choices(self):
+        for promo in (chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT):
+            with self.subTest(promotion=promo):
+                game = Game(chess.WHITE, None)
+                game.board = chess.Board('8/4P3/8/8/8/8/8/8 w - - 0 1')
+                move = chess.Move(chess.E7, chess.E8, promotion=promo)
+                sound = game.move(move)
+                self.assertEqual(sound, 'promote')
+                self.assertEqual(game.board.piece_at(chess.E8).piece_type, promo)
+
 
 if __name__ == '__main__':
     unittest.main()
