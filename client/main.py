@@ -88,14 +88,13 @@ def run():
     selected = None
     promotion = None
     awaiting_accept = False
-    revision = None
     rejected_reason = None
     reject_until = 0.0
     previous_result = None
     running = True
 
     def stop_online():
-        nonlocal controller, client, selected, promotion, awaiting_accept, revision
+        nonlocal controller, client, selected, promotion, awaiting_accept
         nonlocal room_code, is_creator
         if controller is not None:
             controller.close()
@@ -106,7 +105,6 @@ def run():
         selected = None
         promotion = None
         awaiting_accept = False
-        revision = None
         room_code = None
         is_creator = False
 
@@ -124,15 +122,19 @@ def run():
             controller = None
             return False
 
-    def on_move_intent(uci):
-        """Gửi MOVE_REQUEST khi người chơi dự định đi nước (chế độ online)."""
+    def on_move_intent(uci, expected_revision):
+        """Gửi MOVE_REQUEST khi người chơi dự định đi nước (chế độ online).
+
+        Controller truyền revision hiện tại làm expected_revision.
+        """
         nonlocal awaiting_accept
         board = controller.game.board
         move = chess.Move.from_uci(uci)
         snd = ('promote' if move.promotion else 'castle' if board.is_castling(move)
                else 'capture' if board.is_capture(move) else None)
-        if revision is not None:
-            safe_send(make_message(MessageType.MOVE_REQUEST, uci=uci, expected_revision=revision))
+        if controller.revision is not None:
+            safe_send(make_message(MessageType.MOVE_REQUEST, uci=uci,
+                                   expected_revision=expected_revision))
         awaiting_accept = True
         if snd:
             sounds.play(snd)
@@ -307,34 +309,17 @@ def run():
                             color, online_minutes, 'Normal', mode='online',
                             on_online_move_intent=on_move_intent,
                         )
-                    revision = None
                     sounds.play('notify')
 
                 elif mtype == MessageType.GAME_START:
-                    remaining = None
-                    if msg.get('white_time') is not None:
-                        remaining = {
-                            chess.WHITE: float(msg['white_time']),
-                            chess.BLACK: float(msg['black_time']),
-                        }
-                    controller.apply_server_snapshot(
-                        msg['fen'], remaining=remaining, result=msg.get('result'))
-                    revision = msg.get('revision', 0)
+                    controller.apply_server_snapshot(msg)
                     controller.error = None
                     state = 'game'
                     awaiting_accept = False
                     sounds.play('game-start')
 
                 elif mtype == MessageType.MOVE_ACCEPTED:
-                    remaining = None
-                    if msg.get('white_time') is not None:
-                        remaining = {
-                            chess.WHITE: float(msg['white_time']),
-                            chess.BLACK: float(msg['black_time']),
-                        }
-                    controller.apply_server_snapshot(
-                        msg['fen'], remaining=remaining, result=msg.get('result'))
-                    revision = msg.get('revision', revision)
+                    controller.apply_server_snapshot(msg)
                     controller.error = None
                     is_own = awaiting_accept
                     awaiting_accept = False
@@ -350,10 +335,11 @@ def run():
                 elif mtype == MessageType.ERROR:
                     reason = msg.get('reason')
                     if state == 'game' and reason in ('resigned', 'draw_accepted', 'opponent_disconnected'):
+                        result = msg.get('result') or reason
                         controller.apply_server_snapshot(
                             controller.game.board.fen(),
                             remaining=controller.game.remaining,
-                            result=msg.get('result') or reason,
+                            result=result,
                         )
                         controller.error = None
                     else:
