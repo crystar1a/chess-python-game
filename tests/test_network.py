@@ -2,8 +2,12 @@ import socket
 import struct
 import threading
 import unittest
+import queue
+import time
 
 from shared.protocol import MAX_FRAME, MessageType, encode_frame, make_message, recv_exact, recv_frame
+from client.net.tcp_client import TCPClient
+from server.net.tcp_server import TCPServer
 
 
 class ProtocolTests(unittest.TestCase):
@@ -68,6 +72,37 @@ class ProtocolTests(unittest.TestCase):
             encode_frame({'data': 'x' * MAX_FRAME})
         with self.assertRaises(ValueError):
             encode_frame([])
+
+
+class TCPIntegrationTests(unittest.TestCase):
+    def test_two_clients_and_disconnect(self):
+        received, disconnected = queue.Queue(), queue.Queue()
+        server = TCPServer('127.0.0.1', 0, lambda conn, msg: received.put((conn, msg)), disconnected.put)
+        server.start()
+        self.addCleanup(server.close)
+        a = TCPClient('127.0.0.1', server.port)
+        b = TCPClient('127.0.0.1', server.port)
+        self.addCleanup(a.close)
+        self.addCleanup(b.close)
+        a.send({'who': 'a'})
+        b.send({'who': 'b'})
+        pairs = dict((msg['who'], conn) for conn, msg in (received.get(timeout=3), received.get(timeout=3)))
+        self.assertNotEqual(pairs['a'], pairs['b'])
+        server.send_many([(pairs['a'], {'reply': 'A'}), (pairs['b'], {'reply': 'B'})])
+        def wait_message(client):
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                messages = client.poll_messages()
+                if messages:
+                    return messages
+                time.sleep(0.01)
+            self.fail('No message received')
+        self.assertEqual(wait_message(a), [{'reply': 'A'}])
+        self.assertEqual(wait_message(b), [{'reply': 'B'}])
+        a.close()
+        self.assertEqual(disconnected.get(timeout=3), pairs['a'])
+        server.send(pairs['b'], {'reply': 'still connected'})
+        self.assertEqual(wait_message(b), [{'reply': 'still connected'}])
 
 
 if __name__ == '__main__':
