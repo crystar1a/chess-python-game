@@ -2,7 +2,7 @@ import unittest
 
 import chess
 
-from client.game.local_board import Game
+from client.game.game_controller import Controller
 from client.gui.board_view import SIZE, square_pos
 from client.input.mouse_controller import select_square, square_at
 
@@ -16,33 +16,33 @@ class MouseTests(unittest.TestCase):
         self.assertIsNone(square_at((-1, 0), chess.WHITE))
 
     def test_click_selected_piece_to_deselect(self):
-        game = Game(chess.WHITE, None)
-        pos = square_pos(chess.E2, game.player)
-        selected, _, _ = select_square(pos, game, None)
+        controller = Controller(chess.WHITE, None, mode='local')
+        pos = square_pos(chess.E2, controller.game.player)
+        selected, _, _ = select_square(pos, controller, None)
         self.assertEqual(selected, chess.E2)
-        self.assertEqual(select_square(pos, game, selected), (None, None, None))
-        self.assertFalse(game.board.move_stack)
+        self.assertEqual(select_square(pos, controller, selected), (None, None, None))
+        self.assertFalse(controller.game.board.move_stack)
 
     def test_select_and_move(self):
-        game = Game(chess.WHITE, None)
-        selected, promotion, sound = select_square(square_pos(chess.E2, game.player), game, None)
+        controller = Controller(chess.WHITE, None, mode='local')
+        selected, promotion, sound = select_square(square_pos(chess.E2, controller.game.player), controller, None)
         self.assertEqual(selected, chess.E2)
-        selected, promotion, sound = select_square(square_pos(chess.E4, game.player), game, selected)
+        selected, promotion, sound = select_square(square_pos(chess.E4, controller.game.player), controller, selected)
         self.assertIsNone(selected)
         self.assertIsNone(promotion)
         self.assertEqual(sound, 'move-self')
-        self.assertEqual(game.board.peek(), chess.Move.from_uci('e2e4'))
+        self.assertEqual(controller.game.board.peek(), chess.Move.from_uci('e2e4'))
 
     def test_select_square_detects_promotion(self):
-        game = Game(chess.WHITE, None)
-        game.board = chess.Board('8/4P3/8/8/8/8/8/8 w - - 0 1')
+        controller = Controller(chess.WHITE, None, mode='local')
+        controller.game.board = chess.Board('8/4P3/8/8/8/8/8/8 w - - 0 1')
         # Select pawn on E7
-        selected, promotion, sound = select_square(square_pos(chess.E7, game.player), game, None)
+        selected, promotion, sound = select_square(square_pos(chess.E7, controller.game.player), controller, None)
         self.assertEqual(selected, chess.E7)
         self.assertIsNone(promotion)
         self.assertIsNone(sound)
         # Click E8 (promotion square)
-        selected, promotion, sound = select_square(square_pos(chess.E8, game.player), game, selected)
+        selected, promotion, sound = select_square(square_pos(chess.E8, controller.game.player), controller, selected)
         self.assertEqual(selected, chess.E7)
         self.assertEqual(promotion, (chess.E7, chess.E8))
         self.assertIsNone(sound)
