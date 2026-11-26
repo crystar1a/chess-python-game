@@ -63,7 +63,7 @@ def run():
                         if pygame.Rect(170 + i * 125, 260, 115, 42).collidepoint(event.pos):
                             minutes = value
                     if pygame.Rect(315, 360, 170, 45).collidepoint(event.pos):
-                        controller = Controller(color, minutes, difficulty)
+                        controller = Controller(color, minutes, difficulty, mode='local')
                         selected = promotion = None
                         sounds.play('game-start')
                 else:
@@ -80,12 +80,13 @@ def run():
                         for i, rect in enumerate(rects):
                             if rect.collidepoint(event.pos):
                                 piece = (chess.ROOK, chess.KNIGHT, chess.BISHOP, chess.QUEEN)[i]
-                                sound = game.move(chess.Move(promotion[0], promotion[1], promotion=piece))
+                                uci = chess.Move(promotion[0], promotion[1], promotion=piece).uci()
+                                sound = controller.apply_uci(uci)
                                 if sound:
                                     sounds.play('game-end' if game.result else sound)
                                 promotion = selected = None
                         continue
-                    selected, promotion, sound = select_square(event.pos, game, selected)
+                    selected, promotion, sound = select_square(event.pos, controller, selected)
                     if sound:
                         sounds.play('game-end' if game.result else sound)
 

@@ -13,7 +13,18 @@ def square_at(pos, player):
                         7 - row if player == chess.WHITE else row)
 
 
-def select_square(pos, game, selected):
+def select_square(pos, controller, selected):
+    """Xử lý click chuột trên bàn cờ.
+
+    Trả về (selected, promotion, sound):
+    - selected: ô được chọn (hoặc None)
+    - promotion: tuple (from_square, to_square) nếu cần phong cấp, hoặc None
+    - sound: tên âm thanh từ controller.apply_uci (hoặc None)
+
+    Mọi thao tác đi quân và phong cấp được chuyển thành chuỗi UCI
+    rồi đẩy qua controller.apply_uci().
+    """
+    game = controller.game
     target = square_at(pos, game.player)
     if target is None:
         return selected, None, None
@@ -23,7 +34,12 @@ def select_square(pos, game, selected):
     if piece and piece.color == game.player:
         return target, None, None
     if selected is not None:
-        if any(m.from_square == selected and m.to_square == target and m.promotion for m in game.board.legal_moves):
+        # Nếu là nước đi phong cấp, yêu cầu chọn peça phong cấp
+        if any(m.from_square == selected and m.to_square == target and m.promotion
+               for m in game.board.legal_moves):
             return selected, (selected, target), None
-        return None, None, game.move(chess.Move(selected, target))
+        # Xây dựng UCI và đẩy qua controller
+        uci = chess.Move(selected, target).uci()
+        sound = controller.apply_uci(uci)
+        return None, None, sound
     return selected, None, None

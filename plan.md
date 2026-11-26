@@ -2,26 +2,24 @@
 
 ## Mục tiêu
 
-Xây dựng trò chơi cờ vua Pixel Chess bằng Python và Pygame; dùng python-chess xử lý luật, Stockfish làm đối thủ và pygame.mixer phát âm thanh. Tổ chức theo kiến trúc client–server, phân lớp trong từng phía. Ưu tiên bản nháp chơi với bot trên một máy; triển khai TCP và UDP ở giai đoạn sau.
-
-Đây là bước tiền đề: xây dựng trò chơi cờ vua trước để làm cơ sở cập nhật TCD và UCD, từ đó thiết kế và xây dựng chương trình chơi cờ qua mạng ở giai đoạn tiếp theo.
+Xây dựng trò chơi cờ vua Pixel Chess bằng Python và Pygame; dùng `python-chess` xử lý luật, Stockfish làm đối thủ và `pygame.mixer` phát âm thanh. Tổ chức theo kiến trúc client–server, phân lớp trong từng phía. Hoàn thiện bản chơi với bot trên một máy trước để làm cơ sở cập nhật TCD và UCD, sau đó triển khai chế độ chơi qua mạng bằng `socket` và `threading` thuần của Python.
 
 Người chơi chọn chơi với bot, sau đó chọn độ khó Easy, Normal hoặc Hard, rồi chọn thời gian và màu quân trước ván; bot cầm quân còn lại và quân trắng đi trước. Chọn quân và ô đích bằng chuột, dùng luật cờ vua tiêu chuẩn.
 
-## Tiêu chí thiết kế: "Avoid Code Bloated" 
+## Tiêu chí thiết kế: "Avoid Code Bloated"
 
-Giữ code dễ đọc, dễ bảo trì và tránh phình to khi xây dựng thêm chức năng. Áp dụng kiến trúc phân lớp đã chọn, phân chia trách nhiệm rõ ràng và tận dụng Pygame, python-chess và Stockfish. Chỉ thêm abstraction, cấu hình hoặc tính năng khi có nhu cầu cụ thể; tránh trùng lặp và độ phức tạp không cần thiết, đồng thời tái cấu trúc khi cần để duy trì sự rõ ràng.
+Giữ code dễ đọc, dễ bảo trì và tránh phình to khi xây dựng thêm chức năng. Áp dụng kiến trúc phân lớp đã chọn, phân chia trách nhiệm rõ ràng và tận dụng thư viện chuẩn (`socket`, `threading`, `struct`, `json`, `queue`) cùng Pygame, `python-chess` và Stockfish. Chỉ thêm abstraction, cấu hình hoặc tính năng khi có nhu cầu cụ thể; tránh trùng lặp và độ phức tạp không cần thiết.
 
 ## Công nghệ và tài nguyên
 
-- Khai báo pygame-ce và python-chess trong requirements.txt; dùng pygame-ce tương thích Python 3.14 (import qua `pygame`).
-- Stockfish là chương trình UCI riêng, được nạp từ thư mục `client/ai/stockfish/`; python-chess không tự cài engine. Gói `stockfish` trên pip cũng chỉ là wrapper và vẫn cần engine riêng; ưu tiên adapter UCI hiện có của python-chess để tránh phụ thuộc trùng lặp.
-- Nguồn ảnh `E:\Chess_Nhom_2\assets` có 12 ảnh quân wp, wn, wb, wr, wq, wk, bp, bn, bb, br, bq, bk và original.png. Kiểm tra nội dung, kích thước sau đó sao chép vào thư mục dự án.
-- Thư mục `assets/sounds/` đã có các tệp MP3: `capture`, `castle`, `game-end`, `game-start`, `move-check`, `move-opponent`, `move-self`, `notify`, `promote` và `tenseconds`. Theo thông tin được cung cấp, ảnh và âm thanh có thể tải và sử dụng; kiểm tra khả năng phát và dùng đường dẫn tương đối trong project. Kiểm tra và hướng dẫn cung cấp Stockfish nếu chưa có. Trò chơi vẫn chạy khi thiếu âm thanh; không phụ thuộc đường dẫn E: khi phân phối.
+- Khai báo `pygame-ce` và `python-chess` trong `requirements.txt`; dùng `pygame-ce` tương thích Python 3.14 (import qua `pygame`).
+- Stockfish là chương trình UCI riêng, được nạp từ thư mục `client/ai/stockfish/`; ưu tiên adapter UCI hiện có của `python-chess` để tránh phụ thuộc trùng lặp.
+- Nguồn ảnh `assets/` có 12 ảnh quân `wp, wn, wb, wr, wq, wk, bp, bn, bb, br, bq, bk` và `original.png`.
+- Thư mục `assets/sounds/` có các tệp MP3: `capture`, `castle`, `game-end`, `game-start`, `move-check`, `move-opponent`, `move-self`, `notify`, `promote` và `tenseconds`. Trò chơi vẫn chạy bình thường khi thiếu âm thanh hoặc thiếu engine local.
 
 ## Kiến trúc client–server
 
-Cấu trúc mục tiêu dưới đây kết hợp client–server với phân chia trách nhiệm trong từng phía. Tên `chess_online/` là thư mục gốc dự án; các tệp và thư mục mạng chỉ tạo khi triển khai tính năng tương ứng.
+Cấu trúc mục tiêu giữ ở mức tối giản (chỉ bổ sung đúng 5 tệp mạng khi triển khai online). Giai đoạn hiện tại lưu trữ phòng, phiên và `token` trực tiếp trên bộ nhớ RAM (`dict` bảo vệ bởi `threading.RLock`); cơ sở dữ liệu SQLite và đóng gói Docker sẽ tích hợp ở giai đoạn sau.
 
 ```text
 chess_online/
@@ -39,22 +37,18 @@ chess_online/
 │   ├── ai/
 │   │   └── stockfish.py
 │   └── net/
-│       ├── network_client.py
 │       ├── tcp_client.py
 │       └── udp_client.py
 ├── server/
 │   ├── main.py
 │   ├── app.py
-│   ├── matchmaking.py
 │   ├── rooms.py
 │   ├── game/
 │   │   ├── chess_match.py
 │   │   └── rules.py
-│   ├── net/
-│   │   ├── tcp_server.py
-│   │   └── udp_server.py
-│   └── persistence/
-│       └── game_repository.py
+│   └── net/
+│       ├── tcp_server.py
+│       └── udp_server.py
 ├── shared/
 │   └── protocol.py
 ├── tests/
@@ -66,71 +60,49 @@ chess_online/
 └── README.md
 ```
 
-- **Client**: `main.py` khởi tạo ứng dụng; `gui/` vẽ, quản lý tài nguyên và âm thanh; `input/` xử lý chuột; `game/` điều phối và giữ bàn cờ cục bộ; `ai/` tích hợp Stockfish cho chế độ bot; `net/` kết nối mạng khi có chế độ online. Giao diện không tự quyết định kết quả ván.
-- **Server**: quản lý kết nối, ghép trận, phòng và ván; `server/game/` dùng python-chess để kiểm tra lượt, nước đi và kết quả. Server là nguồn trạng thái có thẩm quyền trong ván online; persistence chỉ cần khi có yêu cầu lưu ván.
-- **Shared** đặt định dạng thông điệp JSON và mã đóng/đọc frame dùng chung tại `shared/protocol.py`.
-- **Chế độ bot cục bộ** dùng python-chess và Stockfish để quản lý ván trên client. Chế độ online dùng bản sao bàn cờ để vẽ và gợi ý ô đích. Bản sao chỉ thay đổi khi nhận trạng thái xác nhận từ server.
-- **Tests**: kiểm thử chế độ bot trước, sau đó bổ sung kiểm thử giao thức, đồng bộ và hành vi server khi triển khai online.
-
-Mã bản bot được tổ chức trong `client/game/`, `client/ai/`, `client/gui/` và `client/input/`. Điểm vào `client/main.py` điều phối vòng lặp; `main.py` ở gốc giữ lệnh chạy hiện tại. Chỉ tách thêm tệp khi cần và chưa tạo server hay giao thức giả cho bản bot.
+- **Client**: `main.py` khởi tạo ứng dụng; `gui/` vẽ, quản lý tài nguyên và âm thanh; `input/` xử lý chuột; `game/` điều phối thông qua `GameController`; `ai/` tích hợp Stockfish cho chế độ bot; `net/` quản lý kết nối `tcp_client.py` và `udp_client.py` đẩy sự kiện qua `queue.Queue` để không chặn vòng lặp Pygame.
+- **Server**: `app.py` điều phối dịch vụ; `rooms.py` quản lý phòng và phiên người chơi trên RAM; `server/game/` dùng `python-chess` làm nguồn sự thật duy nhất (Server-Authoritative) để kiểm tra lượt, nước đi, đồng hồ và kết quả; `server/net/` xử lý socket TCP và UDP đa luồng.
+- **Shared**: `shared/protocol.py` định nghĩa framing 4-byte big-endian (`!I`) + JSON UTF-8 và toàn bộ cấu trúc gói tin dùng chung.
 
 ## Thiết kế bản chơi với bot
 
-1. Khởi tạo pygame-ce; khi chọn chơi với bot, cho chọn độ khó Easy, Normal hoặc Hard, sau đó chọn thời gian 5, 10, 15 phút hoặc không tính thời gian và màu trắng hoặc đen, rồi bắt đầu ván. Cả engine local và REST API dùng chung độ sâu tìm kiếm Easy 5, Normal 10 và Hard 15 ply. Vẽ bàn cờ 8×8, scale ảnh quân theo ô và đặt quân của người chơi ở phía dưới. Xác định phép chuyển giữa tọa độ màn hình và ô python-chess cho cả hai hướng.
-2. Chọn quân của người chơi bằng chuột và đánh dấu các ô đích hợp lệ. Quân trắng đi trước; nếu người chơi chọn đen, bot đi nước đầu. Chỉ thực hiện nước đi được python-chess xác nhận; bỏ qua thao tác ngoài bàn cờ và nước sai.
+1. Khởi tạo `pygame-ce`; khi chọn chơi với bot, cho chọn độ khó **Easy (3 ply)**, **Normal (8 ply)** hoặc **Hard (15 ply)**, sau đó chọn thời gian 5, 10, 15 phút hoặc không tính thời gian và màu trắng hoặc đen, rồi bắt đầu ván. Cả engine local và REST API dùng chung bộ độ sâu này. Vẽ bàn cờ 8×8, scale ảnh quân theo ô và đặt quân của người chơi ở phía dưới.
+2. Chọn quân của người chơi bằng chuột và đánh dấu các ô đích hợp lệ. Quân trắng đi trước; nếu người chơi chọn đen, bot đi nước đầu. Chỉ thực hiện nước đi được `python-chess` xác nhận; bỏ qua thao tác ngoài bàn cờ và nước sai.
 3. Khi phong cấp, cho chọn hậu, xe, tượng hoặc mã trước khi gửi nước đi. Hiển thị lượt và kết quả ván.
 4. Gửi bản sao vị trí cho Stockfish với giới hạn độ sâu đã chọn. Chạy tác vụ engine ngoài vòng lặp giao diện; khóa nước đi của người chơi khi chờ. Kiểm tra kết quả engine hợp lệ và còn thuộc ván hiện tại.
-5. Tích hợp các tệp trong `assets/sounds/` cho sự kiện tương ứng: bắt đầu và kết thúc ván, nước đi của người chơi và bot, bắt quân, nhập thành, chiếu và phong cấp. Các âm thanh khác dùng khi có sự kiện phù hợp. Nếu mixer hoặc tệp âm thanh lỗi, thông báo hợp lý và tiếp tục không âm thanh.
-6. Khi thiếu engine local, gọi stockfish.online qua HTTPS với API key tùy chọn trong `client/ai/stockfish/api.txt`. Hiển thị lỗi khi engine khởi động thất bại hoặc yêu cầu REST gặp lỗi và cho phép thoát hoặc bắt đầu lại sau khi khắc phục. Khi thoát hoặc bắt đầu lại, bỏ qua kết quả cũ và đóng tiến trình an toàn.
-7. Hiển thị chiếu hết, hết nước đi và hòa. Bản nháp có thể tự nhận hòa khi python-chess xác định có quyền yêu cầu hòa; thông báo rõ quyết định này.
-8. Với ván có tính giờ, mỗi bên có thời gian riêng bằng mức đã chọn, không cộng thêm thời gian sau nước đi. Đồng hồ của bên đến lượt chạy, kể cả khi bot suy nghĩ hoặc người chơi chọn phong cấp; đổi đồng hồ sau nước đi hợp lệ và dừng khi ván kết thúc. Hết giờ thì bên hết giờ thua, trừ khi đối thủ không thể chiếu hết bằng bất kỳ chuỗi nước đi hợp lệ nào thì ván hòa. Với lựa chọn không tính thời gian, không chạy đồng hồ. Bắt đầu lại đặt lại đồng hồ theo lựa chọn của ván.
+5. Tích hợp các tệp trong `assets/sounds/` cho sự kiện tương ứng. Nếu mixer hoặc tệp âm thanh lỗi, thông báo hợp lý và tiếp tục không âm thanh.
+6. Khi thiếu engine local, gọi `stockfish.online` qua HTTPS GET với API key tùy chọn trong `client/ai/stockfish/api.txt` (tự động lùi về chế độ khách nếu gặp HTTP 401/403).
+7. Hiển thị chiếu hết, hết nước đi và hòa. Bản nháp có thể tự nhận hòa khi `python-chess` xác định có quyền yêu cầu hòa.
+8. Với ván có tính giờ, mỗi bên có thời gian riêng bằng mức đã chọn, không cộng thêm thời gian sau nước đi. Hết giờ thì bên hết giờ thua, trừ khi đối thủ không thể chiếu hết bằng bất kỳ chuỗi nước đi hợp lệ nào thì ván hòa.
 
 ## Các bước thực hiện
 
 - [x] Khảo sát dự án nguồn, các tệp âm thanh hiện có, Stockfish và môi trường Python.
 - [x] Chuyển mã từ `src/` sang cấu trúc `client/` theo trách nhiệm trên; cập nhật điểm vào, import và kiểm thử.
 - [x] Tạo cấu trúc tối thiểu, dependencies và hướng dẫn chạy; đưa asset vào dự án.
-- [x] Xây lớp quản lý ván dựa trên python-chess; đã có kiểm thử cơ bản cho nước hợp lệ và không hợp lệ.
-- [ ] Hoàn thiện và kiểm thử menu, bàn cờ và phong cấp: đã có ba mức độ khó, chọn thời gian và màu, hướng bàn cờ, chuột và phong cấp; chưa có bước chọn chế độ chơi với bot riêng và chưa kiểm thử đầy đủ các luồng.
-- [ ] Hoàn thiện đồng hồ: đã có thời gian riêng, tùy chọn không giới hạn, đổi lượt và xử lý hết giờ; kiểm tra hòa khi hết giờ hiện dựa trên thiếu quân, chưa bao phủ mọi thế cờ không thể chiếu hết.
-- [ ] Kiểm thử đầy đủ tích hợp Stockfish bất đồng bộ, xử lý lỗi và dọn tiến trình: đã triển khai, kiểm thử cấu hình, lỗi khởi động và nước đi cũ; còn kiểm tra đóng hoặc bắt đầu lại khi engine đang chạy.
-- [ ] Kiểm thử đầy đủ pygame.mixer và chế độ không âm thanh: đã tải các tệp và xử lý lỗi mixer/tệp; còn xác minh các sự kiện âm thanh và trường hợp thiếu tài nguyên.
-- [ ] Hoàn thiện bắt đầu lại, kết quả ván, README và kiểm thử đầu cuối: đã có chức năng và hướng dẫn cơ bản; chưa xác nhận một ván hoàn chỉnh và các tình huống thủ công.
-- [x] Đối chiếu kế hoạch TCP/UDP với thiết kế của dự án cũ và mã Pygame hiện tại. Đã xác định thứ tự triển khai ở mục **Định hướng TCP và UDP**.
-- [ ] Cập nhật TCD và UCD sau khi bản bot đạt tiêu chí. Triển khai và kiểm thử chế độ chơi mạng theo các mốc bên dưới.
+- [x] Xây lớp quản lý ván dựa trên `python-chess`; đã có kiểm thử cơ bản cho nước hợp lệ và không hợp lệ.
+- [x] Thống nhất độ sâu tìm kiếm Easy 3, Normal 8, Hard 15 cho cả local và REST API (14/14 unit test đạt).
+- [ ] Hoàn thiện và kiểm thử menu, bàn cờ và phong cấp: kiểm thử đầy đủ luồng chọn chế độ, màu quân, thời gian và 4 lựa chọn phong cấp.
+- [ ] Hoàn thiện đồng hồ: bao phủ đầy đủ các thế cờ không thể chiếu hết khi một bên hết giờ.
+- [ ] Kiểm thử đầy đủ tích hợp Stockfish bất đồng bộ, `pygame.mixer` và dọn tiến trình khi đóng hoặc bắt đầu lại ván.
+- [ ] Cập nhật TCD và UCD sau khi bản bot đạt tiêu chí. Triển khai và kiểm thử chế độ chơi mạng theo 4 bước bên dưới.
 
-### Kiểm tra tiến độ hiện tại
+## Định hướng TCP và UDP (4 Bước triển khai)
 
-- Ngày 25/11/2026, bot ưu tiên engine local do người chơi tự tải. Khi thiếu engine, bot gửi FEN và độ sâu Easy 3, Normal 8 hoặc Hard 15 qua HTTPS GET tới StockfishOnline. Nếu có khóa trong `client/ai/stockfish/api.txt`, bot thêm tham số URL `key` để yêu cầu ưu tiên. Khi tệp thiếu hoặc trống, bot chơi ở chế độ khách.
-- Nếu yêu cầu đầu tiên có khóa bị trả về HTTP 401 hoặc 403, bot thử lại một lần với quyền khách. Nếu thành công, bot tiếp tục ván ở chế độ khách. Nếu dịch vụ trả lỗi 403 kèm JSON, giao diện hiển thị lý do trong trường `data`. Đã kiểm tra luồng thử lại bằng phản hồi mô phỏng. Việc dịch vụ thực sự cấp ưu tiên vẫn cần xác nhận bằng một ván trực tuyến.
+Sử dụng thư viện chuẩn `socket` + `threading` (`ThreadPoolExecutor` cho các kết nối TCP client, `threading.RLock` bảo vệ trạng thái phòng trên RAM, `queue.Queue` giao tiếp giữa luồng mạng và luồng Pygame).
 
-- Ngày 25/11/2026, đã thống nhất độ sâu cho cả local và REST. Bộ kiểm thử tự động đạt **14/14**, gồm kiểm tra tham số độ sâu ở cả hai nhánh bằng mock.
+1. [ ] **Bước 1 — Tách lớp Controller & Khóa chuẩn Framing (Nền tảng):**
+   - Đưa toàn bộ thao tác đi quân và phong cấp qua `GameController` (chế độ local áp dụng cục bộ; chế độ online phát `MOVE_REQUEST` dạng UCI và chỉ cập nhật bàn cờ khi nhận xác nhận từ server).
+   - Xây dựng `shared/protocol.py` dùng **Length-Prefix Framing 4-byte big-endian (`!I`) + JSON UTF-8** (`MAX_FRAME = 65536`) và bộ kiểm thử `tests/test_network.py` cho trường hợp cắt nhỏ gói tin (fragmentation) và dính nhiều gói (coalescing).
+2. [ ] **Bước 2 — Lõi TCP 1v1 trên Localhost (Cổng 8765):**
+   - Cài đặt `tcp_server.py` và `tcp_client.py` bằng `socket` + `threading`.
+   - Server giữ `python-chess.Board` duy nhất trong `ChessMatch`, kiểm tra lượt, nước đi hợp lệ, tăng `revision` sau mỗi nước đi (`MOVE_REQUEST` gửi kèm `expected_revision`).
+   - Đồng hồ tính trên server bằng `time.monotonic()`, gửi kèm thời gian còn lại qua TCP trong `GAME_START` và `MOVE_ACCEPTED`; client tự đếm ngược hiển thị giữa hai nước đi. Chơi trọn một ván PvP qua localhost với phòng tạo bằng mã.
+3. [ ] **Bước 3 — Khôi phục phiên qua TCP (Reconnect 60 giây):**
+   - Bổ sung heartbeat TCP (`PING`/`PONG` mỗi 3s), tự động đóng socket chết nếu quá 12s không phản hồi.
+   - Giữ trạng thái phòng và `token` trên RAM trong 60 giây khi người chơi mất kết nối (đồng hồ vẫn chạy; quá 60s xử thua). Khi nối lại bằng `RESUME` + `token`, server trả về toàn bộ trạng thái hiện tại (màu quân, FEN, nước cuối, đồng hồ, `revision`).
+4. [ ] **Bước 4 — Dò phòng LAN & Đo độ trễ qua UDP (Cổng 9999) + Giao diện Online:**
+   - Cài đặt `udp_server.py` và `udp_client.py`: hỗ trợ gửi broadcast `DISCOVER` (`255.255.255.255:9999`) để tìm phòng đang mở trong mạng LAN (vẫn giữ tùy chọn nhập `IP:port` thủ công) và gói UDP `PING`/`PONG` đo độ trễ (RTT) hiển thị trên HUD.
+   - Bổ sung menu Online tối giản trong Pygame (Tạo phòng, Danh sách phòng LAN, Nhập IP/Mã phòng).
 
-- Ngày 24/11/2026, chạy `python -m unittest discover -s tests -v` bằng môi trường ảo Windows. **13/13 kiểm thử đạt**, gồm nước hợp lệ và sai, đồng hồ và các ca hết giờ, ánh xạ ô theo hai hướng bàn cờ, chọn và bỏ chọn quân, ba cấu hình Stockfish, đường dẫn engine, lỗi khởi động và kết quả engine đã cũ.
-- Đã kiểm tra Stockfish thực tế trả nước hợp lệ trước khi chuyển thư mục engine; đường dẫn mới đã được kiểm thử tồn tại. Chưa ghi nhận kiểm thử một ván hoàn chỉnh sau các thay đổi giao diện và cấu trúc.
-- Đã có panel người chơi và đối thủ, đồng hồ, font Chess Sans và hiệu ứng hover. Phần chơi mạng đang ở giai đoạn thiết kế. Hai nhánh đi quân và phong cấp hiện vẫn gọi `game.move()` trực tiếp.
-- Còn thiếu kiểm thử các luật đặc biệt, bốn lựa chọn phong cấp, kết thúc ván, các mức thời gian, tương tác menu, âm thanh, reset và thoát khi bot đang chạy. Cần kiểm thử thủ công cả hai màu và ghi kết quả trước khi xác nhận bản bot hoàn tất.
-
-## Kiểm thử và tiêu chí hoàn thành
-
-- Người chơi chọn được trắng hoặc đen và hoàn thành ván với bot; trắng đi trước, bot đi đầu khi người chơi chọn đen. Cửa sổ phản hồi khi bot suy nghĩ; bắt đầu lại và thoát sạch.
-- Kiểm thử nước hợp lệ và sai, nhập thành, bắt tốt qua đường, bốn lựa chọn phong cấp, chiếu hết, hết nước đi và hòa.
-- Kiểm thử ánh xạ bốn góc bàn cờ ở cả hai hướng, chọn lại quân, bấm ngoài bàn và khóa đầu vào lúc bot đang đi.
-- Kiểm thử các lựa chọn 5, 10, 15 phút và không tính thời gian; đồng hồ đổi đúng lượt, tiếp tục chạy khi bot suy nghĩ hoặc chọn phong cấp, dừng khi kết thúc và đặt lại khi bắt đầu lại. Kiểm thử kết quả hết giờ, bao gồm trường hợp hòa khi đối thủ không thể chiếu hết.
-- Kiểm thử thứ tự menu, cả ba mức độ khó và cấu hình Stockfish tương ứng trước khi chọn thời gian.
-- Kiểm thử thiếu hoặc lỗi engine, kết quả bot cũ sau khi tạo ván mới, thiếu âm thanh và đóng cửa sổ khi engine đang chạy.
-- README mô tả cài đặt, chạy, cấu hình Stockfish, nguồn asset, giới hạn và lệnh kiểm thử; ghi nhận kết quả kiểm thử tự động và thủ công.
-
-## Định hướng TCP và UDP
-
-**Mốc đầu tiên** là chơi trọn một ván PvP qua TCP giữa hai cửa sổ Pygame trên cùng máy. Server giữ bàn cờ, kiểm tra lượt và nước đi, tính giờ và quyết định kết quả. UDP được bổ sung ở mốc tìm server trong LAN.
-
-1. [ ] **Đưa nước đi qua controller.** Thao tác chọn ô và chọn quân phong cấp tạo nước đi để controller xử lý. Chế độ bot áp dụng nước đi cục bộ. Chế độ online gửi `MOVE_REQUEST` với mã UCI (ví dụ `e7e8q`) và cập nhật bàn cờ từ snapshot của server. Chạy lại bộ kiểm thử bot sau thay đổi.
-2. [ ] **Chạy một ván qua TCP trên cùng máy.** Dùng `asyncio` cho server và worker mạng chuyển sự kiện vào queue để vòng lặp Pygame đọc. Dùng JSON UTF-8 với tiền tố độ dài 4 byte big-endian, giới hạn payload 64 KiB. Kiểm thử một frame bị chia qua nhiều lần đọc và nhiều frame được đọc cùng lúc. Dùng `request_id` để ghép phản hồi với yêu cầu và nhận diện yêu cầu gửi lại. Server tăng `revision` khi trạng thái ván đổi. `MOVE_REQUEST` mang `expected_revision` của bàn cờ hiện tại. Kiểm thử sai lượt, nước sai, phong cấp và kết thúc ván. Sau mỗi nước hợp lệ, hai client phải có cùng FEN và `revision`.
-3. [ ] **Tạo phòng bằng mã và kiểm thử trên LAN.** Thêm mục chơi online, phòng hai người lưu trong bộ nhớ và một chế độ giờ ban đầu `5+0`. Server tính giờ bằng `time.monotonic()` và gửi thời gian còn lại qua TCP khi bắt đầu ván và sau nước đi. Client tự đếm xuống để hiển thị. Kiểm thử hai máy cùng LAN và chốt chính sách yêu cầu hòa của chế độ online.
-4. [ ] **Khôi phục phiên qua TCP.** Giữ ván và cho phép nối lại bằng token trong 60 giây nếu ván còn diễn ra. Đồng hồ tiếp tục chạy khi mất kết nối. Khi nối lại, server gửi màu quân, FEN, nước cuối, thời gian còn lại, kết quả và `revision`. Kiểm thử trường hợp server đã chấp nhận nước đi ngay trước khi kết nối bị ngắt và client chưa nhận được phản hồi.
-5. [ ] **Tìm server trong LAN bằng UDP.** Client dò server qua UDP và dùng TCP để vào phòng và chơi. Giữ lựa chọn nhập `IP:port` thủ công. Đánh giá nhu cầu thêm cập nhật đồng hồ qua UDP sau khi thử chơi thực tế trên LAN.
-
-Ghép trận tự động, chat và lưu lịch sử ván bằng SQLite thuộc giai đoạn sau. Khi triển khai qua Internet, dùng TLS cho kết nối TCP trước khi đưa token phiên hoặc thông tin đăng nhập qua mạng công cộng.
-
-Tham khảo [TCP_UDP_BUILD_PLAN.md](TCP_UDP_BUILD_PLAN.md) và [NETWORK_ANALYSIS.md](NETWORK_ANALYSIS.md).
+*(Ghi chú giai đoạn sau: Lưu lịch sử ván PGN vào SQLite, xác thực tài khoản và đóng gói Docker sẽ thực hiện sau khi hoàn tất 4 bước mạng cốt lõi trên.)*
