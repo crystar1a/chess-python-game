@@ -9,3 +9,7 @@ TCP_UDP_BUILD_PLAN.md
 NETWORK_ANALYSIS.md
 message_to_*.md
 server/data/*.db
+.agents/
+.claude/
+.superpowers/
+skills-lock.json
