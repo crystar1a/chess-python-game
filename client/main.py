@@ -163,6 +163,8 @@ def run():
                         for i, level in enumerate(('Easy', 'Normal', 'Hard')):
                             if pygame.Rect(200 + i * 140, 260, 125, 42).collidepoint(pos):
                                 difficulty = level
+                        if pygame.Rect(315, 330, 170, 45).collidepoint(pos):
+                            state = 'menu'
                         continue
                     if pygame.Rect(270, 160, 120, 42).collidepoint(pos):
                         color = chess.WHITE
@@ -178,6 +180,8 @@ def run():
                         previous_result = None
                         state = 'game'
                         sounds.play('game-start')
+                    if pygame.Rect(315, 430, 170, 45).collidepoint(pos):
+                        difficulty = None
 
                 elif state == 'online_menu':
                     rects = minutes_rects(260)
@@ -362,6 +366,7 @@ def run():
                 centered_label('Choose bot difficulty', 400, 200)
                 for i, level in enumerate(('Easy', 'Normal', 'Hard')):
                     button(pygame.Rect(200 + i * 140, 260, 125, 42), level)
+                button(pygame.Rect(315, 330, 170, 45), 'Back')
             else:
                 centered_label('Bot: ' + difficulty, 400, 100, use_font=small)
                 centered_label('Choose your color', 400, 125)
@@ -369,6 +374,7 @@ def run():
                 button(pygame.Rect(410, 160, 120, 42), 'Black', color == chess.BLACK)
                 draw_minutes(260, minutes)
                 button(pygame.Rect(315, 360, 170, 45), 'Start game')
+                button(pygame.Rect(315, 430, 170, 45), 'Back')
 
         elif state == 'online_menu':
             centered_label('Pixel Chess', 400, 70)
