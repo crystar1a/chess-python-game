@@ -103,4 +103,21 @@ Hoặc kích hoạt `.venv` trước rồi chạy `python main.py`.
 
 ---
 
+## 7. Quy ước bàn giao chéo (Handoff Message)
+
+Sau khi hoàn thành một phiên làm việc, mỗi agent phải ghi/cập nhật file bàn giao trực tiếp vào thư mục worktree của agent còn lại (các file `message_to_*.md` đã được `.gitignore` bỏ qua, không commit vào git):
+
+- **Claude Code** (tại `E:\chess_game-claude`) → ghi vào `E:\chess_game-codex\message_to_codex.md`
+- **Codex CLI** (tại `E:\chess_game-codex`) → ghi vào `E:\chess_game-claude\message_to_claude.md`
+
+### Quy trình bắt buộc ở đầu và cuối mỗi phiên
+
+1. **Đầu phiên (Kiểm tra & chống outdated):**
+   - Đọc file `message_to_<tên_mình>.md` trong worktree hiện tại (nếu có).
+   - Đối chiếu nội dung trong file (thời gian, branch, commit hash, tên hàm/interface, payload) với `git status`, `git log -n 5 --oneline`, `origin/main` và mã nguồn thực tế. Nếu thấy lệch hoặc cũ hơn code hiện tại, ưu tiên sự thật trong code/git và ghi chú lại.
+2. **Cuối phiên (Ghi bàn giao):**
+   - Ghi đè/cập nhật file `message_to_<agent_kia>.md` trong worktree của agent kia với đầy đủ: thời gian, worktree, branch, commit hash, danh sách file đã sửa, thay đổi interface/payload (nếu có), kết quả kiểm thử, và việc tiếp theo đề xuất.
+
+---
+
 _Người viết: Claude Code (dành cho cả Claude Code và Codex CLI). Sửa khi cần thiết._
