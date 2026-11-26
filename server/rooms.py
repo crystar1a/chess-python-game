@@ -41,7 +41,12 @@ class RoomManager:
         return ''.join(__import__('random').choices(string.ascii_uppercase + string.digits, k=6))
 
     def _handle_create_room(self, conn_id, msg):
+        minutes = msg.get('minutes')
+        if minutes is not None and (type(minutes) is not int or minutes not in (5, 10, 15)):
+            return [(conn_id, make_message(MessageType.ERROR, reason='invalid_minutes'))]
         code = self._make_room_code()
+        while code in self._rooms:
+            code = self._make_room_code()
         token = str(uuid.uuid4())
         room = {
             'code': code,
@@ -49,6 +54,7 @@ class RoomManager:
             'white_conn': conn_id,
             'black_conn': None,
             'match': None,
+            'minutes': minutes,
         }
         self._rooms[code] = room
         self._conn_to_room[conn_id] = code
@@ -72,7 +78,7 @@ class RoomManager:
         self._conn_to_room[conn_id] = code
         self._conn_to_color[conn_id] = chess.BLACK
 
-        match = ChessMatch(room['white_conn'], room['black_conn'])
+        match = ChessMatch(room['white_conn'], room['black_conn'], room['minutes'], room['minutes'])
         room['match'] = match
 
         game_start = make_message(
@@ -83,6 +89,9 @@ class RoomManager:
             revision=match.revision,
             white_time=match.white_time,
             black_time=match.black_time,
+            game_over=False,
+            result=None,
+            reason=None,
         )
 
         return [
@@ -116,8 +125,34 @@ class RoomManager:
 
         response = match.apply_move(color, uci, expected_revision)
 
+        if response['type'] == MessageType.MOVE_REJECTED:
+            return [(conn_id, response)]
         recipients = [room['white_conn'], room['black_conn']]
         return [(rid, response) for rid in recipients]
+
+    def on_disconnect(self, conn_id):
+        with self._lock:
+            code = self._conn_to_room.pop(conn_id, None)
+            self._conn_to_color.pop(conn_id, None)
+            room = self._rooms.pop(code, None)
+            if room is None:
+                return []
+            opponent = room['black_conn'] if room['white_conn'] == conn_id else room['white_conn']
+            if opponent is None:
+                return []
+            self._conn_to_room.pop(opponent, None)
+            self._conn_to_color.pop(opponent, None)
+            return [(opponent, make_message(MessageType.ERROR, reason='opponent_disconnected', game_over=True))]
+
+    def check_timeouts(self):
+        with self._lock:
+            deliveries = []
+            for room in self._rooms.values():
+                if room['match'] is not None:
+                    message = room['match'].check_timeout()
+                    if message:
+                        deliveries.extend((conn_id, message) for conn_id in (room['white_conn'], room['black_conn']))
+            return deliveries
 
     def _handle_resign(self, conn_id, msg):
         room, match = self._get_match(conn_id)

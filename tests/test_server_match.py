@@ -18,6 +18,18 @@ class ChessMatchTests(unittest.TestCase):
         self.assertEqual(resp['turn'], 'black')
         self.assertEqual(self.match.board.peek(), chess.Move.from_uci('e2e4'))
 
+    def test_expired_clock_rejects_move_and_reports_result(self):
+        from unittest.mock import patch
+        with patch('server.game.chess_match.time.monotonic', return_value=0) as clock:
+            match = ChessMatch('a', 'b', 5, 5)
+            clock.return_value = 301
+            response = match.apply_move(chess.WHITE, 'e2e4', 0)
+        self.assertTrue(response['game_over'])
+        self.assertEqual(response['result'], '0-1')
+        self.assertEqual(response['reason'], 'Timeout')
+        self.assertEqual(match.board.fen(), chess.STARTING_FEN)
+        self.assertEqual(match.apply_move(chess.WHITE, 'e2e4', match.revision)['reason'], 'game_over')
+
     def test_wrong_turn_rejected(self):
         # Deny black moving first
         resp = self.match.apply_move(chess.BLACK, 'e7e5', 0)
@@ -67,6 +79,41 @@ class RoomManagerTests(unittest.TestCase):
 
     def _message_type(self, msg):
         return msg.get('type')
+
+    def test_create_room_clock_and_snapshot(self):
+        for minutes in (5, 10, 15, None):
+            rm = RoomManager()
+            welcome = rm.handle_message('a', {'type': 'CREATE_ROOM', 'minutes': minutes})[0][1]
+            starts = rm.handle_message('b', {'type': 'JOIN_ROOM', 'room_code': welcome['room_code']})
+            snapshot = next(msg for _, msg in starts if msg['type'] == 'GAME_START')
+            self.assertEqual(snapshot['white_time'], None if minutes is None else minutes * 60)
+            self.assertEqual(snapshot['black_time'], None if minutes is None else minutes * 60)
+            self.assertFalse(snapshot['game_over'])
+            self.assertIsNone(snapshot['result'])
+            self.assertIsNone(snapshot['reason'])
+
+    def test_invalid_minutes_rejected(self):
+        for minutes in (True, 0, 7, '5'):
+            self.assertEqual(self.rm.handle_message('a', {'type': 'CREATE_ROOM', 'minutes': minutes})[0][1]['type'], 'ERROR')
+
+    def test_disconnect_closes_room_and_notifies_opponent(self):
+        code = self.rm.handle_message('a', {'type': 'CREATE_ROOM'})[0][1]['room_code']
+        self.rm.handle_message('b', {'type': 'JOIN_ROOM', 'room_code': code})
+        deliveries = self.rm.on_disconnect('a')
+        self.assertEqual(deliveries[0][0], 'b')
+        self.assertEqual(deliveries[0][1]['reason'], 'opponent_disconnected')
+        self.assertEqual(self.rm.handle_message('b', {'type': 'MOVE_REQUEST', 'uci': 'e7e5', 'expected_revision': 0})[0][1]['reason'], 'no_active_match')
+
+    def test_timeout_broadcast_without_move(self):
+        from unittest.mock import patch
+        with patch('server.game.chess_match.time.monotonic', return_value=0) as clock:
+            code = self.rm.handle_message('a', {'type': 'CREATE_ROOM', 'minutes': 5})[0][1]['room_code']
+            self.rm.handle_message('b', {'type': 'JOIN_ROOM', 'room_code': code})
+            clock.return_value = 301
+            deliveries = self.rm.check_timeouts()
+            self.assertEqual({recipient for recipient, _ in deliveries}, {'a', 'b'})
+            self.assertEqual(deliveries[0][1]['result'], '0-1')
+            self.assertEqual(self.rm.check_timeouts(), [])
 
     def test_create_room_returns_welcome(self):
         results = self.rm.handle_message('conn_a', {'type': MessageType.CREATE_ROOM})
@@ -121,6 +168,14 @@ class RoomManagerTests(unittest.TestCase):
                 self.assertEqual(msg['reason'], 'not_your_turn')
                 return
         self.fail('No MOVE_REJECTED for wrong turn')
+
+    def test_rejected_move_only_goes_to_requester(self):
+        code = self.rm.handle_message('white', {'type': 'CREATE_ROOM'})[0][1]['room_code']
+        self.rm.handle_message('black', {'type': 'JOIN_ROOM', 'room_code': code})
+        results = self.rm.handle_message('black', {'type': 'MOVE_REQUEST', 'uci': 'e7e5', 'expected_revision': 0})
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0][0], 'black')
+        self.assertEqual(results[0][1]['type'], 'MOVE_REJECTED')
 
     def test_stale_revision_rejected(self):
         self.rm.handle_message('conn_a', {'type': MessageType.CREATE_ROOM})
