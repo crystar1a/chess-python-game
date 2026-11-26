@@ -389,7 +389,6 @@ def run():
             text = room_input + ('|' if int(now * 2) % 2 == 0 and room_input_active else '')
             rendered = font.render(text, True, (235, 235, 235))
             screen.blit(rendered, rendered.get_rect(center=box.center))
-            draw_minutes(260, online_minutes)
             button(pygame.Rect(315, 330, 170, 45), 'Join', bool(room_input.strip()))
             button(pygame.Rect(315, 390, 170, 45), 'Back')
             if connect_error:
