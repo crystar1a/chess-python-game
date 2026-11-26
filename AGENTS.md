@@ -40,6 +40,7 @@ Nhiệm vụ của Codex:
 Điểm giao nhau là `client/main.py` (hàm `run()`) và các lớp trung gian:
 - UI gọi `game_controller.apply_move(from_square, to_square)` → nhận về kết quả thành công/thất bại + trạng thái ván.
 - UI gọi `ai.stockfish.get_best_move(board)` → nhận về nước đi gợi ý của máy.
+- Online: UI truyền nguyên message `GAME_START` hoặc `MOVE_ACCEPTED` vào `Controller.apply_server_snapshot(message)`; callback `on_online_move_intent(uci, expected_revision)` gửi `MOVE_REQUEST` có hai trường tương ứng. `Controller.revision` chứa revision của snapshot mới nhất.
 - Logic không gọi trực tiếp hàm vẽ pygame; nó chỉ cung cấp dữ liệu trạng thái, UI tự quyết định cách render.
 
 Khi cần thay đổi interface, agent yêu cầu thay đổi phải cập nhật `AGENTS.md` và thông báo agent kia trước khi viết code.

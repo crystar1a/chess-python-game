@@ -8,6 +8,7 @@ import time
 from shared.protocol import MAX_FRAME, MessageType, encode_frame, make_message, recv_exact, recv_frame
 from client.net.tcp_client import TCPClient
 from server.net.tcp_server import TCPServer
+from server.rooms import RoomManager
 
 
 class ProtocolTests(unittest.TestCase):
@@ -75,6 +76,53 @@ class ProtocolTests(unittest.TestCase):
 
 
 class TCPIntegrationTests(unittest.TestCase):
+    def test_full_timed_game(self):
+        rooms = RoomManager()
+        lock = threading.RLock()
+        def on_message(conn_id, message):
+            with lock:
+                server.send_many(rooms.handle_message(conn_id, message))
+        def on_disconnect(conn_id):
+            with lock:
+                server.send_many(rooms.on_disconnect(conn_id))
+        server = TCPServer('127.0.0.1', 0, on_message, on_disconnect)
+        server.start()
+        self.addCleanup(server.close)
+        white = TCPClient('127.0.0.1', server.port)
+        black = TCPClient('127.0.0.1', server.port)
+        self.addCleanup(white.close)
+        self.addCleanup(black.close)
+        def receive(client, count):
+            messages = []
+            deadline = time.monotonic() + 3
+            while len(messages) < count and time.monotonic() < deadline:
+                messages.extend(client.poll_messages())
+                if len(messages) < count:
+                    time.sleep(0.01)
+            self.assertEqual(len(messages), count)
+            return messages
+        white.send({'type': 'CREATE_ROOM', 'minutes': 5})
+        welcome = receive(white, 1)[0]
+        self.assertEqual(welcome['color'], 'white')
+        black.send({'type': 'JOIN_ROOM', 'room_code': welcome['room_code']})
+        white_start = receive(white, 1)[0]
+        black_welcome, black_start = receive(black, 2)
+        self.assertEqual(black_welcome['color'], 'black')
+        self.assertEqual(white_start, black_start)
+        self.assertEqual(white_start['white_time'], 300)
+        self.assertEqual(white_start['black_time'], 300)
+        expected = {'fen', 'turn', 'revision', 'white_time', 'black_time', 'game_over', 'result', 'reason'}
+        self.assertTrue(expected <= white_start.keys())
+        for revision, (client, move) in enumerate(((white, 'f2f3'), (black, 'e7e5'), (white, 'g2g4'), (black, 'd8h4'))):
+            client.send({'type': 'MOVE_REQUEST', 'uci': move, 'expected_revision': revision})
+            white_move, black_move = receive(white, 1)[0], receive(black, 1)[0]
+            self.assertEqual(white_move, black_move)
+            self.assertTrue(expected <= white_move.keys())
+            self.assertEqual(white_move['revision'], revision + 1)
+        self.assertTrue(white_move['game_over'])
+        self.assertEqual(white_move['result'], '0-1')
+        self.assertEqual(white_move['reason'], 'Checkmate')
+
     def test_two_clients_and_disconnect(self):
         received, disconnected = queue.Queue(), queue.Queue()
         server = TCPServer('127.0.0.1', 0, lambda conn, msg: received.put((conn, msg)), disconnected.put)

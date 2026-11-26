@@ -32,8 +32,27 @@ class ChessMatch:
             self.black_time = max(0.0, self.black_time - elapsed)
         self.updated = now
 
+    def check_timeout(self):
+        if self.result is not None:
+            return None
+        color = self.board.turn
+        self._deduct_elapsed(color)
+        remaining = self.white_time if color == chess.WHITE else self.black_time
+        if remaining is None or remaining > 0:
+            return None
+        winner = not color
+        result = '1/2-1/2' if self.board.has_insufficient_material(winner) else ('1-0' if winner else '0-1')
+        self.result = f'{result} - Timeout'
+        self.revision += 1
+        return make_message(MessageType.MOVE_ACCEPTED, fen=self.board.fen(),
+                            turn=self._color_name(self.board.turn), revision=self.revision,
+                            white_time=self.white_time, black_time=self.black_time,
+                            game_over=True, result=result, reason='Timeout')
+
     def apply_move(self, color, uci_move, expected_revision):
         """Áp dụng nước đi UCI nếu hợp lệ. Trả về message MOVE_ACCEPTED hoặc MOVE_REJECTED."""
+        if self.result is not None:
+            return make_message(MessageType.MOVE_REJECTED, reason='game_over')
         if expected_revision != self.revision:
             return make_message(
                 MessageType.MOVE_REJECTED,
@@ -51,13 +70,15 @@ class ChessMatch:
 
         try:
             move = chess.Move.from_uci(uci_move)
-        except ValueError:
+        except (ValueError, TypeError):
             return make_message(MessageType.MOVE_REJECTED, reason='invalid_uci')
 
         if move not in self.board.legal_moves:
             return make_message(MessageType.MOVE_REJECTED, reason='illegal_move')
 
-        self._deduct_elapsed(color)
+        timeout = self.check_timeout()
+        if timeout:
+            return timeout
 
         self.board.push(move)
         self.revision += 1

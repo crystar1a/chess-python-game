@@ -79,7 +79,10 @@ class TCPServer:
 
     def send_many(self, deliveries):
         for conn_id, msg in deliveries:
-            self.send(conn_id, msg)
+            try:
+                self.send(conn_id, msg)
+            except (KeyError, OSError):
+                continue
 
     def close(self):
         with self._lock:

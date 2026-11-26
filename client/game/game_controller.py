@@ -14,6 +14,8 @@ class Controller:
         self.engine = Engine(difficulty)
         self.mode = mode
         self.on_online_move_intent = on_online_move_intent
+        self.revision = None
+        self._legacy_snapshot = False
         self.thinking = False
         self.error = None
 
@@ -26,11 +28,14 @@ class Controller:
         game = self.game
 
         if self.mode == 'online':
-            if game.board.turn != game.player:
+            if game.result or (self.revision is None and not self._legacy_snapshot) or game.board.turn != game.player:
                 self.error = 'Not your turn.'
                 return None
             if self.on_online_move_intent:
-                self.on_online_move_intent(uci)
+                if self._legacy_snapshot:
+                    self.on_online_move_intent(uci)
+                else:
+                    self.on_online_move_intent(uci, self.revision)
             return None
 
         # mode == 'local'
@@ -40,20 +45,34 @@ class Controller:
             return None
         return game.move(move)
 
-    def apply_server_snapshot(self, fen, remaining=None, result=None):
+    def apply_server_snapshot(self, message, remaining=None, result=None):
         """Cập nhật bàn cờ từ trạng thái server (chế độ online)."""
         game = self.game
-        game.board = chess.Board(fen)
-        if remaining is not None:
+        if isinstance(message, str):
+            self._legacy_snapshot = True
+            game.board = chess.Board(message)
             game.remaining = remaining
-        if result is not None:
             game.result = result
+            game.updated = time.monotonic()
+            self.error = None
+            return
+        self._legacy_snapshot = False
+        game.board = chess.Board(message['fen'])
+        self.revision = message['revision']
+        white_time, black_time = message['white_time'], message['black_time']
+        game.remaining = None if white_time is None and black_time is None else {
+            chess.WHITE: white_time, chess.BLACK: black_time}
+        result, reason = message.get('result'), message.get('reason')
+        game.result = (f'{result} - {reason}' if reason else result) if message.get('game_over') else None
         game.updated = time.monotonic()
         self.error = None
 
     def update(self):
         game = self.game
+        previous_result = game.result
         game.tick()
+        if self.mode == 'online' and previous_result is None:
+            game.result = None
         if game.result or self.error:
             return None
         if self.mode == 'local':
