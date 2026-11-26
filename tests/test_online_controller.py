@@ -49,3 +49,24 @@ class OnlineControllerTests(unittest.TestCase):
         self.assertEqual(controller.game.remaining[chess.WHITE], 0)
         self.assertIsNone(controller.game.result)
         controller.close()
+
+    def test_snapshot_tracks_san_history_with_uci_and_fen_fallback(self):
+        c = Controller(chess.WHITE, 5, mode='online')
+        c.apply_server_snapshot({
+            'fen': chess.STARTING_FEN, 'revision': 0,
+            'white_time': 300.0, 'black_time': 300.0, 'game_over': False,
+        })
+        b1 = chess.Board()
+        b1.push_uci('e2e4')
+        c.apply_server_snapshot({
+            'fen': b1.fen(), 'revision': 1, 'uci': 'e2e4',
+            'white_time': 299.0, 'black_time': 300.0, 'game_over': False,
+        })
+        b1.push_uci('e7e5')
+        c.apply_server_snapshot({
+            'fen': b1.fen(), 'revision': 2,
+            'white_time': 299.0, 'black_time': 298.0, 'game_over': False,
+        })
+        self.assertEqual(c.game.move_history, ['e4', 'e5'])
+        self.assertEqual(c.game.last_move, chess.Move.from_uci('e7e5'))
+        c.close()

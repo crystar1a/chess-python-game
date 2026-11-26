@@ -4,7 +4,7 @@ import chess
 
 from client.game.game_controller import Controller
 from client.gui.board_view import SIZE, square_pos
-from client.input.mouse_controller import select_square, square_at
+from client.input.mouse_controller import resolve_drop, select_square, square_at
 
 
 class MouseTests(unittest.TestCase):
@@ -45,4 +45,20 @@ class MouseTests(unittest.TestCase):
         selected, promotion, sound = select_square(square_pos(chess.E8, controller.game.player), controller, selected)
         self.assertEqual(selected, chess.E7)
         self.assertEqual(promotion, (chess.E7, chess.E8))
+        self.assertIsNone(sound)
+
+    def test_resolve_drop_valid_invalid_and_promotion(self):
+        controller = Controller(chess.WHITE, None, mode='local')
+        origin, sq_size = (20, 60), 64
+        e2_pos = (origin[0] + 4 * sq_size + 10, origin[1] + 6 * sq_size + 10)
+        self.assertEqual(square_at(e2_pos, chess.WHITE, origin, sq_size), chess.E2)
+        e4_pos = (origin[0] + 4 * sq_size + 10, origin[1] + 4 * sq_size + 10)
+        promo, sound = resolve_drop(chess.E2, e4_pos, controller, origin, sq_size)
+        self.assertIsNone(promo)
+        self.assertEqual(sound, 'move-self')
+        self.assertEqual(resolve_drop(chess.D2, (0, 0), controller, origin, sq_size), (None, None))
+        controller.game.board = chess.Board('8/4P3/8/8/8/8/8/8 w - - 0 1')
+        e8_pos = (origin[0] + 4 * sq_size + 10, origin[1] + 10)
+        promo, sound = resolve_drop(chess.E7, e8_pos, controller, origin, sq_size)
+        self.assertEqual(promo, (chess.E7, chess.E8))
         self.assertIsNone(sound)

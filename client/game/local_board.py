@@ -10,6 +10,8 @@ class Game:
         self.remaining = None if minutes is None else {chess.WHITE: minutes * 60.0, chess.BLACK: minutes * 60.0}
         self.updated = time.monotonic()
         self.result = None
+        self.move_history = []
+        self.last_move = None
 
     def tick(self):
         now = time.monotonic()
@@ -29,9 +31,12 @@ class Game:
         if self.result or move not in self.board.legal_moves:
             return None
         board = self.board
+        san = board.san(move)
         sound = ('promote' if move.promotion else 'castle' if board.is_castling(move)
                  else 'capture' if board.is_capture(move) else None)
         board.push(move)
+        self.move_history.append(san)
+        self.last_move = move
         if board.is_check():
             sound = 'move-check'
         outcome = board.outcome(claim_draw=True)

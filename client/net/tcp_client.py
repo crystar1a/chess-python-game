@@ -6,8 +6,9 @@ from shared.protocol import DEFAULT_TCP_PORT, encode_frame, recv_frame
 
 
 class TCPClient:
-    def __init__(self, host, port=DEFAULT_TCP_PORT):
-        self._socket = socket.create_connection((host, port))
+    def __init__(self, host, port=DEFAULT_TCP_PORT, timeout=None):
+        self._socket = socket.create_connection((host, port), timeout=timeout)
+        self._socket.settimeout(None)
         self._messages = queue.Queue()
         self._send_lock = threading.Lock()
         self._thread = threading.Thread(target=self._receive, daemon=True)

@@ -94,6 +94,7 @@ class ChessMatch:
         return make_message(
             MessageType.MOVE_ACCEPTED,
             fen=self.board.fen(),
+            uci=uci_move,
             turn=self._color_name(self.board.turn),
             revision=self.revision,
             white_time=self.white_time,

@@ -2,10 +2,12 @@ import threading
 
 from server.net.tcp_server import TCPServer
 from server.rooms import RoomManager
+from server.auth import AuthService, UserStore
 
 
 def main():
-    rooms = RoomManager()
+    store = UserStore()
+    rooms = RoomManager(AuthService(store))
     # Serialize routing and delivery so simultaneous requests retain server order.
     lock = threading.RLock()
 
@@ -30,6 +32,7 @@ def main():
         pass
     finally:
         server.close()
+        store.close()
 
 
 if __name__ == '__main__':

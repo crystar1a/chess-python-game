@@ -13,6 +13,13 @@ class GameTests(unittest.TestCase):
         self.assertEqual(game.move(chess.Move.from_uci('e2e4')), 'move-self')
         self.assertEqual(game.board.turn, chess.BLACK)
 
+    def test_move_history_and_last_move_recorded(self):
+        game = Game(chess.WHITE, None)
+        game.move(chess.Move.from_uci('e2e4'))
+        game.move(chess.Move.from_uci('e7e5'))
+        self.assertEqual(game.move_history, ['e4', 'e5'])
+        self.assertEqual(game.last_move, chess.Move.from_uci('e7e5'))
+
     def test_clocks_switch_and_expire(self):
         with patch('client.game.local_board.time.monotonic', return_value=0) as clock:
             game = Game(chess.WHITE, 5)

@@ -7,13 +7,16 @@ import chess
 from shared.protocol import MessageType, make_message
 
 from server.game.chess_match import ChessMatch
+from server.auth import AuthService, UserStore
 
 
 class RoomManager:
     """Quản lý phòng 2 người và phiên trên RAM, bảo vệ bởi threading.RLock."""
 
-    def __init__(self):
+    def __init__(self, auth_service=None):
         self._lock = threading.RLock()
+        self.auth_service = auth_service
+        self._conn_to_user = {}
         self._rooms = {}        # room_code -> room dict
         self._conn_to_room = {} # conn_id -> room_code
         self._conn_to_color = {}# conn_id -> chess.WHITE / chess.BLACK
@@ -22,6 +25,8 @@ class RoomManager:
         """Router thuần logic. Trả về danh sách (recipient_conn_id, message_dict)."""
         msg_type = msg.get('type')
         with self._lock:
+            if msg_type in (MessageType.AUTH_GUEST, MessageType.AUTH_SUBMIT, MessageType.AUTH_REGISTER, MessageType.AUTH_TOKEN):
+                return self._handle_auth(conn_id, msg_type, msg)
             if msg_type == MessageType.CREATE_ROOM:
                 return self._handle_create_room(conn_id, msg)
             if msg_type == MessageType.JOIN_ROOM:
@@ -35,6 +40,31 @@ class RoomManager:
             if msg_type == MessageType.DRAW_ACCEPT:
                 return self._handle_draw_accept(conn_id, msg)
             return [(conn_id, make_message(MessageType.ERROR, reason='unknown_message_type'))]
+
+    def _handle_auth(self, conn_id, kind, msg):
+        self._conn_to_user.pop(conn_id, None)
+        if self.auth_service is None:
+            self.auth_service = AuthService(UserStore(':memory:'))
+        service = self.auth_service
+        if kind == MessageType.AUTH_GUEST:
+            result = service.check_guest(msg.get('username'))
+        elif kind == MessageType.AUTH_SUBMIT:
+            result = service.submit_login_or_probe(msg.get('username'), msg.get('password'))
+        elif kind == MessageType.AUTH_REGISTER:
+            result = service.register(msg.get('username'), msg.get('password'))
+        else:
+            name = service.verify_token(msg.get('token'))
+            result = {'status': 'ok', 'username': name, 'token': msg.get('token')} if name else {'status': 'invalid_token'}
+        status = result['status']
+        if status == 'ok':
+            guest = kind == MessageType.AUTH_GUEST
+            self._conn_to_user[conn_id] = {'username': result['username'], 'is_guest': guest}
+            response = make_message(MessageType.AUTH_OK, username=result['username'], is_guest=guest, token=result.get('token'))
+        elif status == 'needs_register':
+            response = make_message(MessageType.AUTH_NEEDS_REGISTER, username=result['username'])
+        else:
+            response = make_message(MessageType.AUTH_ERROR, reason=status)
+        return [(conn_id, response)]
 
     @staticmethod
     def _make_room_code():
@@ -92,6 +122,8 @@ class RoomManager:
             game_over=False,
             result=None,
             reason=None,
+            white_name=self._conn_to_user.get(room['white_conn'], {}).get('username', 'White'),
+            black_name=self._conn_to_user.get(conn_id, {}).get('username', 'Black'),
         )
 
         return [
@@ -132,6 +164,7 @@ class RoomManager:
 
     def on_disconnect(self, conn_id):
         with self._lock:
+            self._conn_to_user.pop(conn_id, None)
             code = self._conn_to_room.pop(conn_id, None)
             self._conn_to_color.pop(conn_id, None)
             room = self._rooms.pop(code, None)
