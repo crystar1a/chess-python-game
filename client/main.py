@@ -18,17 +18,19 @@ from client.gui.screens import (
     draw_join_input_screen,
     draw_menu_screen,
     draw_online_menu_screen,
+    draw_server_screen,
+    draw_room_list_screen,
     draw_resign_confirmation,
+    draw_rematch_confirmation,
     draw_waiting_screen,
 )
 from client.input.mouse_controller import resolve_drop, select_square, square_at
 from client.net.auth_client import ConnectionUnavailable, exchange
 from client.net.session_store import save_session, room_request, delete_session
+from client.net.server_config import load_address, save_address, parse_address
 from server.auth import normalize_username
 from shared.protocol import DEFAULT_TCP_PORT, MessageType, make_message
 
-HOST = '127.0.0.1'
-PORT = DEFAULT_TCP_PORT
 MINUTES_OPTIONS = (5, 10, 15, None)
 
 ERROR_LABELS = {
@@ -66,6 +68,16 @@ def run():
     auth_generation = 0
     auth_results = queue.Queue()
     pending_room = None
+    server_address = load_address()
+    server_host, server_port = parse_address(server_address)
+    rooms = []
+    rooms_offset = 0
+    chat_open = False
+    chat_focus = False
+    chat_text = ''
+    chat_messages = []
+    chat_unread = 0
+    chat_scroll = 0
 
     opponent_name = 'Đối thủ'
     color = chess.WHITE
@@ -90,6 +102,8 @@ def run():
 
     awaiting_accept = False
     resign_modal = False
+    rematch_modal = False
+    rematch_pending = False
     player_disconnected = False
     opponent_disconnected = False
     rejected_reason = None
@@ -107,7 +121,7 @@ def run():
 
         def worker():
             try:
-                response, connection = exchange(HOST, PORT, message)
+                response, connection = exchange(server_host, server_port, message)
                 auth_results.put((generation, purpose, response, connection, None))
             except (OSError, TimeoutError) as exc:
                 auth_results.put((generation, purpose, None, None, exc))
@@ -163,20 +177,21 @@ def run():
             if not pygame.scrap.get_init():
                 pygame.scrap.init()
             pygame.scrap.put_text(room_code)
-            if state == 'waiting':
+            if state == 'waiting' and not (controller is not None and is_creator):
                 connect_error = 'Đã sao chép mã phòng'
             else:
                 rejected_reason = 'Đã sao chép mã phòng'
                 reject_until = time.monotonic() + 3
         except pygame.error:
-            if state == 'waiting':
+            if state == 'waiting' and not (controller is not None and is_creator):
                 connect_error = 'Không thể sao chép mã phòng'
             else:
                 rejected_reason = 'Không thể sao chép mã phòng'
                 reject_until = time.monotonic() + 3
 
     def stop_online():
-        nonlocal controller, client, awaiting_accept, room_code, is_creator, player_disconnected, opponent_disconnected
+        nonlocal controller, client, awaiting_accept, room_code, is_creator, player_disconnected, opponent_disconnected, rematch_modal, rematch_pending
+        nonlocal chat_open, chat_focus, chat_text, chat_messages, chat_unread, chat_scroll
         if controller is not None:
             controller.close()
             controller = None
@@ -188,6 +203,12 @@ def run():
         room_code = None
         is_creator = False
         player_disconnected = opponent_disconnected = False
+        rematch_modal = rematch_pending = False
+        chat_open = chat_focus = False
+        chat_text = ''
+        chat_messages = []
+        chat_unread = chat_scroll = 0
+        pygame.key.stop_text_input()
 
     def safe_send(msg):
         nonlocal client, connect_error, state, controller, player_disconnected
@@ -215,10 +236,23 @@ def run():
         if snd:
             sounds.play(snd)
 
+    def send_chat():
+        nonlocal chat_text
+        if (controller is not None and controller.mode == 'online' and not controller.game.result
+                and not player_disconnected and not opponent_disconnected and not controller.error
+                and chat_text.strip() and client is not None):
+            if safe_send(make_message(MessageType.CHAT_SEND, text=chat_text)):
+                chat_text = ''
+
     while running:
         now = time.monotonic()
+        if chat_open and (state != 'game' or controller is None or controller.game.result):
+            chat_open = False
         if resign_modal and (state != 'game' or controller is None or controller.game.result or player_disconnected or opponent_disconnected):
             resign_modal = False
+        if chat_focus and (state != 'game' or controller is None or controller.game.result or player_disconnected or opponent_disconnected or not chat_open):
+            chat_focus = False
+            pygame.key.stop_text_input()
         if rejected_reason and now > reject_until:
             rejected_reason = None
 
@@ -235,7 +269,9 @@ def run():
                     screen = pygame.display.set_mode((win_w, win_h), pygame.RESIZABLE)
 
             elif event.type == pygame.MOUSEWHEEL and state == 'game':
-                if hits.get('moves_rect') and hits['moves_rect'].collidepoint(mouse_pos):
+                if chat_open and hits.get('chat_list') and hits['chat_list'].collidepoint(mouse_pos):
+                    chat_scroll = max(0, chat_scroll + event.y * 28)
+                elif not chat_open and hits.get('moves_rect') and hits['moves_rect'].collidepoint(mouse_pos):
                     move_scroll = max(0, move_scroll - event.y * 28)
 
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -260,11 +296,8 @@ def run():
                                 auth_session['username'] = 'Guest'
                         state = 'bot_setup'
                     elif hits.get('online') and hits['online'].collidepoint(pos):
-                        if auth_saved and not auth_session['offline_guest']:
-                            connect_error = None
-                            state = 'online_menu'
-                        else:
-                            submit_auth(register=False, purpose='enter_online', default_guest=True)
+                        connect_error = None
+                        state = 'server_setup'
                     elif hits.get('switch_auth') and hits['switch_auth'].collidepoint(pos):
                         auth_saved = False
                         auth_session = {'username': 'Guest', 'is_guest': True, 'token': None, 'offline_guest': True}
@@ -296,6 +329,25 @@ def run():
                     elif hits.get('back') and hits['back'].collidepoint(pos):
                         state = 'menu'
 
+                elif state == 'server_setup':
+                    if hits.get('connect') and hits['connect'].collidepoint(pos):
+                        try:
+                            new_host, new_port = save_address(server_address)
+                            if (new_host, new_port) != (server_host, server_port):
+                                auth_saved = False
+                                auth_session = {'username': 'Guest', 'is_guest': True, 'token': None, 'offline_guest': True}
+                            server_host, server_port = new_host, new_port
+                            connect_error = None
+                            if auth_saved and not auth_session['offline_guest']:
+                                state = 'online_menu'
+                            else:
+                                state = 'menu'
+                                submit_auth(register=False, purpose='enter_online', default_guest=True)
+                        except (OSError, ValueError) as exc:
+                            connect_error = str(exc)
+                    elif hits.get('back') and hits['back'].collidepoint(pos):
+                        state = 'menu'
+
                 elif state == 'online_menu':
                     if hits.get('create') and hits['create'].collidepoint(pos):
                         state = 'create_room'
@@ -303,6 +355,10 @@ def run():
                         state = 'join_input'
                         room_input = ''
                         room_input_active = True
+                    elif hits.get('rooms') and hits['rooms'].collidepoint(pos):
+                        rooms = []
+                        rooms_offset = 0
+                        begin_room(make_message(MessageType.LIST_ROOMS))
                     elif hits.get('back') and hits['back'].collidepoint(pos):
                         state = 'menu'
 
@@ -316,6 +372,25 @@ def run():
                             begin_room(make_message(MessageType.CREATE_ROOM, minutes=online_minutes))
                     elif hits.get('back') and hits['back'].collidepoint(pos):
                         state = 'online_menu'
+
+                elif state == 'room_list':
+                    if hits.get('back') and hits['back'].collidepoint(pos):
+                        stop_online()
+                        state = 'online_menu'
+                    elif hits.get('refresh') and hits['refresh'].collidepoint(pos):
+                        safe_send(make_message(MessageType.LIST_ROOMS))
+                    elif hits.get('prev') and hits['prev'].collidepoint(pos):
+                        rooms_offset = max(0, rooms_offset - 5)
+                    elif hits.get('next') and hits['next'].collidepoint(pos):
+                        if rooms_offset + 5 < len(rooms):
+                            rooms_offset += 5
+                    else:
+                        for code, rect in hits.get('rooms', []):
+                            if rect.collidepoint(pos):
+                                is_creator = False
+                                if safe_send(room_request(auth_session['username'], code)):
+                                    state = 'waiting'
+                                break
 
                 elif state == 'join_input':
                     if hits.get('join') and hits['join'].collidepoint(pos):
@@ -343,6 +418,14 @@ def run():
 
                 elif state == 'game':
                     game = controller.game
+                    if rematch_modal:
+                        if hits.get('rematch_accept') and hits['rematch_accept'].collidepoint(pos):
+                            rematch_modal = False
+                            safe_send(make_message(MessageType.REMATCH_ACCEPT))
+                        elif hits.get('rematch_decline') and hits['rematch_decline'].collidepoint(pos):
+                            rematch_modal = False
+                            safe_send(make_message(MessageType.REMATCH_DECLINE))
+                        continue
                     if resign_modal:
                         if hits.get('resign_cancel') and hits['resign_cancel'].collidepoint(pos):
                             resign_modal = False
@@ -351,6 +434,25 @@ def run():
                             if client is not None and not player_disconnected and not opponent_disconnected and not game.result and not controller.error:
                                 safe_send(make_message(MessageType.RESIGN))
                         continue
+                    if hits.get('chat_toggle') and hits['chat_toggle'].collidepoint(pos):
+                        chat_open = not chat_open
+                        chat_focus = False
+                        pygame.key.stop_text_input()
+                        if chat_open:
+                            chat_unread = 0
+                            chat_scroll = 0
+                        continue
+                    if chat_open and hits.get('chat_input') and hits['chat_input'].collidepoint(pos):
+                        chat_focus = not player_disconnected and not opponent_disconnected
+                        if chat_focus:
+                            pygame.key.start_text_input()
+                        continue
+                    if chat_open and hits.get('chat_send') and hits['chat_send'].collidepoint(pos):
+                        send_chat()
+                        continue
+                    if chat_focus:
+                        chat_focus = False
+                        pygame.key.stop_text_input()
                     if controller.mode == 'online' and room_code and hits.get('room_code') and hits['room_code'].collidepoint(pos):
                         copy_room_code()
                         continue
@@ -364,6 +466,12 @@ def run():
                             state = 'menu'
                             continue
                     else:
+                        if hits.get('online_rematch') and hits['online_rematch'].collidepoint(pos) and not rematch_pending:
+                            if safe_send(make_message(MessageType.REMATCH_REQUEST)):
+                                rematch_pending = True
+                                rejected_reason = 'Đang chờ đối thủ xác nhận'
+                                reject_until = time.monotonic() + 5
+                            continue
                         if hits.get('leave') and hits['leave'].collidepoint(pos):
                             stop_online()
                             state = 'online_menu'
@@ -423,6 +531,18 @@ def run():
                     selected, promotion, _ = select_square(event.pos, controller, selected, b_orig, sq_sz)
                 drag_state = None
 
+            elif event.type == pygame.TEXTINPUT and state == 'game' and chat_focus and not resign_modal and not rematch_modal:
+                chat_text = (chat_text + ''.join(ch for ch in event.text if ord(ch) >= 32))[:500]
+
+            elif event.type == pygame.KEYDOWN and state == 'game' and chat_focus and not resign_modal and not rematch_modal:
+                if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    send_chat()
+                elif event.key == pygame.K_BACKSPACE:
+                    chat_text = chat_text[:-1]
+                elif event.key == pygame.K_ESCAPE:
+                    chat_focus = False
+                    pygame.key.stop_text_input()
+
             elif event.type == pygame.KEYDOWN and state == 'game' and resign_modal and event.key == pygame.K_ESCAPE:
                 resign_modal = False
 
@@ -450,6 +570,21 @@ def run():
                         auth_username = value
                     else:
                         auth_password = value
+
+            elif event.type == pygame.KEYDOWN and state == 'server_setup':
+                if event.key == pygame.K_BACKSPACE:
+                    server_address = server_address[:-1]
+                elif event.key == pygame.K_ESCAPE:
+                    state = 'menu'
+                elif event.key == pygame.K_v and event.mod & pygame.KMOD_CTRL:
+                    try:
+                        if not pygame.scrap.get_init():
+                            pygame.scrap.init()
+                        server_address = (pygame.scrap.get_text() or '').strip()[:255]
+                    except pygame.error:
+                        connect_error = 'Không thể đọc clipboard'
+                elif event.unicode.isprintable() and len(server_address) < 255:
+                    server_address += event.unicode
 
             elif event.type == pygame.KEYDOWN and state == 'join_input':
                 key = event.key
@@ -548,6 +683,8 @@ def run():
                         connect_error = 'Không thể lưu phiên kết nối lại'
                     color = chess.WHITE if name == 'white' else chess.BLACK
                     is_creator = name == 'white'
+                    if controller is not None:
+                        controller.game.player = color
                     if controller is None:
                         controller = Controller(
                             color, online_minutes, 'Normal', mode='online',
@@ -555,14 +692,27 @@ def run():
                         )
                     sounds.play('notify')
                 elif mtype == MessageType.GAME_START:
+                    new_chat = controller is None or state != 'game' or bool(controller.game.result)
                     if controller is None:
                         color = chess.WHITE if msg.get('color') == 'white' else chess.BLACK
                         room_code = msg.get('room_code')
                         controller = Controller(color, online_minutes, 'Normal', mode='online', on_online_move_intent=on_move_intent)
                     opponent_name = msg.get('black_name' if color == chess.WHITE else 'white_name', 'Đối thủ')
                     controller.apply_server_snapshot(msg)
+                    if new_chat:
+                        chat_open = chat_focus = False
+                        chat_text = ''
+                        chat_messages = []
+                        chat_unread = chat_scroll = 0
+                        pygame.key.stop_text_input()
                     reset_board_ui()
                     controller.error = None
+                    rematch_pending = rematch_modal = False
+                    if getattr(client, '_token', None) and room_code:
+                        try:
+                            save_session(auth_session['username'], room_code, client._token, 'white' if color == chess.WHITE else 'black')
+                        except (OSError, ValueError):
+                            pass
                     player_disconnected = False
                     opponent_disconnected = msg.get('opponent_disconnected', False)
                     state = 'game'
@@ -584,6 +734,37 @@ def run():
                         opponent_disconnected = True
                     elif msg.get('reason') == 'opponent_reconnected':
                         opponent_disconnected = False
+                    elif msg.get('reason') == 'waiting_for_opponent':
+                        rematch_pending = False
+                        if controller is not None:
+                            controller.close()
+                        controller = Controller(color, online_minutes, 'Normal', mode='online', on_online_move_intent=on_move_intent)
+                        reset_board_ui()
+                        state = 'waiting'
+                elif mtype == MessageType.ROOM_LIST:
+                    if msg.get('first'):
+                        rooms = []
+                    rooms.extend(msg.get('rooms', []))
+                    if msg.get('complete', True):
+                        rooms_offset = min(rooms_offset, max(0, (len(rooms) - 1) // 5 * 5))
+                        connect_error = None
+                        state = 'room_list'
+                elif mtype == MessageType.REMATCH_REQUEST:
+                    if state == 'game' and controller and controller.game.result:
+                        rematch_modal = True
+                elif mtype == MessageType.REMATCH_DECLINE:
+                    stop_online()
+                    state = 'online_menu'
+                elif mtype == MessageType.CHAT_MESSAGE:
+                    if controller is not None and state == 'game' and not controller.game.result:
+                        chat_messages.append(msg)
+                        chat_messages = chat_messages[-100:]
+                        chat_scroll = 0
+                        if not chat_open and msg.get('color') != ('white' if controller.game.player == chess.WHITE else 'black'):
+                            chat_unread += 1
+                elif mtype == MessageType.CHAT_REJECTED:
+                    rejected_reason = 'Không thể gửi tin nhắn lúc này'
+                    reject_until = now + 3
                 elif mtype == MessageType.MOVE_ACCEPTED:
                     controller.apply_server_snapshot(msg)
                     controller.error = None
@@ -621,13 +802,14 @@ def run():
 
         # Render
         screen.fill(theme.BG_APP)
-        if state == 'game':
+        if state == 'game' or (state == 'waiting' and controller is not None and is_creator):
+            waiting_for_opponent = state == 'waiting'
             lay = compute_game_layout(win_w, win_h)
             fonts = theme.get_fonts(lay['scale'])
             pieces = theme.get_scaled_pieces(lay['square_size'])
             game = controller.game
             previous_result = game.result
-            sound = controller.update()
+            sound = None if waiting_for_opponent else controller.update()
             if game.result and not previous_result:
                 sounds.play('game-end')
             elif sound:
@@ -673,6 +855,7 @@ def run():
                 game,
                 selected,
                 pieces,
+                only_color=game.player if waiting_for_opponent else None,
                 board_origin=lay['board_rect'].topleft,
                 square_size=lay['square_size'],
                 last_move=game.last_move,
@@ -696,6 +879,7 @@ def run():
                 bar_height=lay['bar_height'],
                 player_disconnected=player_disconnected,
                 opponent_disconnected=opponent_disconnected,
+                waiting=waiting_for_opponent,
             )
             hits = draw_game_sidebar(
                 screen,
@@ -709,8 +893,19 @@ def run():
                 mouse_pos,
                 mouse_down,
                 disconnected=player_disconnected or opponent_disconnected,
+                waiting=waiting_for_opponent,
+                chat_open=chat_open,
+                chat_messages=chat_messages,
+                chat_text=chat_text,
+                chat_unread=chat_unread,
+                chat_focus=chat_focus,
+                chat_scroll=chat_scroll,
+                now=now,
             )
-            move_scroll = hits['scroll']
+            if chat_open and 'chat_list' in hits:
+                chat_scroll = hits['scroll']
+            else:
+                move_scroll = hits['scroll']
 
             if promotion:
                 bubble, rects_p, arrow_x = promotion_rects(
@@ -719,6 +914,8 @@ def run():
                 draw_promotion_bubble(screen, bubble, rects_p, pieces, game.player, arrow_x, mouse_pos)
             if resign_modal and not game.result:
                 hits = draw_resign_confirmation(screen, fonts, mouse_pos, mouse_down)
+            elif rematch_modal and game.result:
+                hits = draw_rematch_confirmation(screen, fonts, mouse_pos, mouse_down)
         else:
             lay = compute_lobby_layout(win_w, win_h)
             fonts = theme.get_fonts(lay['scale'])
@@ -748,6 +945,10 @@ def run():
                 hits = draw_bot_setup_screen(screen, lay, fonts, difficulty, color, minutes, MINUTES_OPTIONS, mouse_pos, mouse_down)
             elif state in ('online_menu', 'create_room'):
                 hits = draw_online_menu_screen(screen, lay, fonts, online_minutes, MINUTES_OPTIONS, connect_error, mouse_pos, mouse_down, creating=state == 'create_room')
+            elif state == 'server_setup':
+                hits = draw_server_screen(screen, lay, fonts, server_address, connect_error, now, mouse_pos, mouse_down)
+            elif state == 'room_list':
+                hits = draw_room_list_screen(screen, lay, fonts, rooms, rooms_offset, connect_error, mouse_pos, mouse_down)
             elif state == 'join_input':
                 hits = draw_join_input_screen(screen, lay, fonts, room_input, room_input_active, connect_error, now, mouse_pos, mouse_down)
             elif state == 'waiting':

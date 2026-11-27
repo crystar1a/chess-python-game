@@ -32,8 +32,14 @@ class RoomManager:
                 return self._handle_create_room(conn_id, msg)
             if msg_type == MessageType.JOIN_ROOM:
                 return self._handle_join_room(conn_id, msg)
+            if msg_type == MessageType.LIST_ROOMS:
+                rooms = [{'room_code': room['code'], 'host': self._conn_to_user.get(room['white_conn'], {}).get('username', 'White'), 'minutes': room['minutes']} for room in self._rooms.values() if room['white_conn'] is not None and room['black_conn'] is None and room['match'] is None]
+                chunks = [rooms[i:i + 200] for i in range(0, len(rooms), 200)] or [[]]
+                return [(conn_id, make_message(MessageType.ROOM_LIST, rooms=chunk, first=i == 0, complete=i == len(chunks) - 1)) for i, chunk in enumerate(chunks)]
             if msg_type == MessageType.MOVE_REQUEST:
                 return self._handle_move_request(conn_id, msg)
+            if msg_type == MessageType.CHAT_SEND:
+                return self._handle_chat(conn_id, msg)
             if msg_type == MessageType.RESUME:
                 return self._handle_resume(conn_id, msg)
             if msg_type == MessageType.PING:
@@ -44,6 +50,8 @@ class RoomManager:
                 return self._handle_draw_offer(conn_id, msg)
             if msg_type == MessageType.DRAW_ACCEPT:
                 return self._handle_draw_accept(conn_id, msg)
+            if msg_type in (MessageType.REMATCH_REQUEST, MessageType.REMATCH_ACCEPT, MessageType.REMATCH_DECLINE):
+                return self._handle_rematch(conn_id, msg_type)
             return [(conn_id, make_message(MessageType.ERROR, reason='unknown_message_type'))]
 
     def _handle_auth(self, conn_id, kind, msg):
@@ -115,6 +123,16 @@ class RoomManager:
         self._conn_to_room[conn_id] = code
         self._conn_to_color[conn_id] = chess.BLACK
 
+        game_start = self._start_match(room)
+        return [
+            (room['white_conn'], game_start),
+            (conn_id, make_message(MessageType.WELCOME, room_code=code, token=room['black_token'], color='black')),
+            (conn_id, game_start),
+        ]
+
+    def _start_match(self, room):
+        code = room['code']
+        conn_id = room['black_conn']
         match = ChessMatch(room['white_conn'], room['black_conn'], room['minutes'], room['minutes'])
         room['match'] = match
 
@@ -135,16 +153,34 @@ class RoomManager:
         room['white_name'] = game_start['white_name']
         room['black_name'] = game_start['black_name']
 
-        return [
-            (room['white_conn'], game_start),
-            (conn_id, make_message(
-                MessageType.WELCOME,
-                room_code=code,
-                token=room['black_token'],
-                color='black',
-            )),
-            (conn_id, game_start),
-        ]
+        room['rematch_offer'] = None
+        return game_start
+
+    def _handle_rematch(self, conn_id, kind):
+        room, match = self._get_match(conn_id)
+        if match is None or match.result is None or room['disconnected']:
+            return [(conn_id, make_message(MessageType.ERROR, reason='rematch_unavailable'))]
+        opponent = room['black_conn'] if conn_id == room['white_conn'] else room['white_conn']
+        if not opponent:
+            return [(conn_id, make_message(MessageType.ERROR, reason='rematch_unavailable'))]
+        if kind == MessageType.REMATCH_REQUEST:
+            if room.get('rematch_offer'):
+                return [(conn_id, make_message(MessageType.ERROR, reason='rematch_pending'))]
+            room['rematch_offer'] = conn_id
+            return [(opponent, make_message(MessageType.REMATCH_REQUEST))]
+        if room.get('rematch_offer') != opponent:
+            return [(conn_id, make_message(MessageType.ERROR, reason='rematch_unavailable'))]
+        if kind == MessageType.REMATCH_ACCEPT:
+            start = self._start_match(room)
+            return [(room['white_conn'], start), (room['black_conn'], start)]
+        self._conn_to_room.pop(conn_id, None)
+        self._conn_to_color.pop(conn_id, None)
+        room.update(white_conn=opponent, black_conn=None, match=None, rematch_offer=None,
+                    token=secrets.token_urlsafe(32), black_token=secrets.token_urlsafe(32), disconnected={})
+        self._conn_to_color[opponent] = chess.WHITE
+        return [(conn_id, make_message(MessageType.REMATCH_DECLINE)),
+                (opponent, make_message(MessageType.WELCOME, room_code=room['code'], token=room['token'], color='white')),
+                (opponent, make_message(MessageType.ROOM_STATE, reason='waiting_for_opponent'))]
 
     def _get_match(self, conn_id):
         code = self._conn_to_room.get(conn_id)
@@ -154,6 +190,18 @@ class RoomManager:
         if room is None:
             return None, None
         return room, room['match']
+
+    def _handle_chat(self, conn_id, msg):
+        room, match = self._get_match(conn_id)
+        text = msg.get('text')
+        if match is None or match.result is not None or room['disconnected'] or not room['white_conn'] or not room['black_conn']:
+            return [(conn_id, make_message(MessageType.CHAT_REJECTED, reason='chat_unavailable'))]
+        if not isinstance(text, str) or not text.strip() or len(text) > 500 or any(ord(ch) < 32 for ch in text):
+            return [(conn_id, make_message(MessageType.CHAT_REJECTED, reason='invalid_message'))]
+        side = 'white' if self._conn_to_color.get(conn_id) == chess.WHITE else 'black'
+        name = room[side + '_name']
+        message = make_message(MessageType.CHAT_MESSAGE, sender=name, color=side, text=text.strip())
+        return [(room['white_conn'], message), (room['black_conn'], message)]
 
     def _handle_move_request(self, conn_id, msg):
         room, match = self._get_match(conn_id)

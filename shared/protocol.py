@@ -4,9 +4,7 @@ from enum import Enum
 
 
 DEFAULT_TCP_PORT = 8765
-DEFAULT_UDP_PORT = 9999
 MAX_FRAME = 65536
-DISCOVER_MAGIC = 'PIXEL_CHESS_V1'
 
 
 class MessageType(str, Enum):
@@ -19,6 +17,8 @@ class MessageType(str, Enum):
     AUTH_ERROR = 'AUTH_ERROR'
     CREATE_ROOM = 'CREATE_ROOM'
     JOIN_ROOM = 'JOIN_ROOM'
+    LIST_ROOMS = 'LIST_ROOMS'
+    ROOM_LIST = 'ROOM_LIST'
     RESUME = 'RESUME'
     WELCOME = 'WELCOME'
     GAME_START = 'GAME_START'
@@ -29,13 +29,15 @@ class MessageType(str, Enum):
     RESIGN = 'RESIGN'
     DRAW_OFFER = 'DRAW_OFFER'
     DRAW_ACCEPT = 'DRAW_ACCEPT'
+    REMATCH_REQUEST = 'REMATCH_REQUEST'
+    REMATCH_ACCEPT = 'REMATCH_ACCEPT'
+    REMATCH_DECLINE = 'REMATCH_DECLINE'
+    CHAT_SEND = 'CHAT_SEND'
+    CHAT_MESSAGE = 'CHAT_MESSAGE'
+    CHAT_REJECTED = 'CHAT_REJECTED'
     PING = 'PING'
     PONG = 'PONG'
     ERROR = 'ERROR'
-    DISCOVER = 'DISCOVER'
-    SERVER_INFO = 'SERVER_INFO'
-    UDP_PING = 'UDP_PING'
-    UDP_PONG = 'UDP_PONG'
 
 
 def make_message(msg_type: str, **fields) -> dict:

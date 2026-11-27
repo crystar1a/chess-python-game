@@ -1,6 +1,6 @@
 # Pixel Chess
 
-Cờ vua với bot Stockfish. Python, pygame-ce, python-chess. Chạy một máy. Chơi mạng (TCP/UDP) là giai đoạn sau.
+Cờ vua với bot Stockfish hoặc người chơi khác qua TCP. Python, pygame-ce và python-chess.
 
 ## Tính năng
 
@@ -9,6 +9,7 @@ Cờ vua với bot Stockfish. Python, pygame-ce, python-chess. Chạy một máy
 - Chọn quân và ô đích bằng chuột; phong cấp hậu/xe/tượng/mã
 - Chiếu hết, hết nước đi, hòa
 - Âm thanh, đồng hồ, nút New game bắt đầu ván mới
+- Chat với đối thủ trong ván online; bấm nút Chat để chuyển giữa tin nhắn và lịch sử nước đi.
 
 ## Cài đặt
 
@@ -25,6 +26,10 @@ python -m venv .venv
 pip install -r requirements.txt
 python main.py
 ```
+
+## Chơi online
+
+Máy chủ chạy `python -m server.main`. Khi chọn **Chơi Online**, nhập địa chỉ IP hoặc tên máy server (có thể kèm cổng, mặc định `8765`); game ghi nhớ địa chỉ cho lần sau. Chọn **Danh sách phòng** để xem và tham gia phòng đang chờ trên server đó, hoặc **Vào phòng** để nhập mã. Nếu chơi qua Tailscale, dùng địa chỉ Tailscale của máy chạy server và bảo đảm hai máy được cấp quyền kết nối. Kết nối TCP chưa có TLS; không mở server trực tiếp ra Internet công cộng.
 
 ## Stockfish local và REST API
 

@@ -133,3 +133,35 @@ def draw_move_list(screen, rect, moves, fonts, scroll_offset=0):
 
     screen.set_clip(prev_clip)
     return scroll_offset
+
+
+def draw_chat_list(screen, rect, messages, fonts, scroll_offset=0):
+    draw_card(screen, rect, bg=theme.BG_INPUT, border=theme.BORDER, radius=5)
+    inner = rect.inflate(-16, -16)
+    lines = []
+    for message in messages:
+        text = f"{message['sender']}: {message['text']}"
+        font = theme.pick_font(fonts, text, 'ui_small')
+        line = ''
+        for char in text:
+            if line and font.size(line + char)[0] > inner.width:
+                lines.append((font, line))
+                line = ''
+            line += char
+        if line:
+            lines.append((font, line))
+    line_height = 22
+    max_scroll = max(0, len(lines) * line_height - inner.height)
+    scroll_offset = max(0, min(scroll_offset, max_scroll))
+    start = max(0, len(lines) * line_height - inner.height) - scroll_offset
+    old_clip = screen.get_clip()
+    screen.set_clip(inner)
+    if not lines:
+        font = theme.pick_font(fonts, 'Chưa có tin nhắn', 'ui_small')
+        screen.blit(font.render('Chưa có tin nhắn', True, theme.TEXT_MUTED), (inner.x, inner.y))
+    for i, (font, line) in enumerate(lines):
+        y = inner.y + i * line_height - start
+        if inner.y - line_height <= y < inner.bottom:
+            screen.blit(font.render(line, True, theme.TEXT_PRIMARY), (inner.x, y))
+    screen.set_clip(old_clip)
+    return scroll_offset

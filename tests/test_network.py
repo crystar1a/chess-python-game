@@ -76,6 +76,73 @@ class ProtocolTests(unittest.TestCase):
 
 
 class TCPIntegrationTests(unittest.TestCase):
+    def test_chat_between_room_players_over_tcp(self):
+        rooms = RoomManager()
+        lock = threading.RLock()
+        def on_message(conn, message):
+            with lock:
+                server.send_many(rooms.handle_message(conn, message))
+        def on_disconnect(conn):
+            with lock:
+                server.send_many(rooms.on_disconnect(conn))
+        server = TCPServer('127.0.0.1', 0, on_message, on_disconnect)
+        server.start()
+        self.addCleanup(server.close)
+        white = TCPClient('127.0.0.1', server.port)
+        black = TCPClient('127.0.0.1', server.port)
+        self.addCleanup(white.close)
+        self.addCleanup(black.close)
+        def receive(client, kind):
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                for message in client.poll_messages():
+                    if message['type'] == kind:
+                        return message
+                time.sleep(0.01)
+            self.fail('Missing ' + kind)
+        white.send({'type': 'CREATE_ROOM'})
+        room = receive(white, 'WELCOME')['room_code']
+        black.send({'type': 'JOIN_ROOM', 'room_code': room})
+        receive(white, 'GAME_START')
+        white.send({'type': 'CHAT_SEND', 'text': 'Xin chào ♞'})
+        received = receive(black, 'CHAT_MESSAGE')
+        self.assertEqual(received['text'], 'Xin chào ♞')
+        self.assertEqual(received['color'], 'white')
+
+    def test_list_rooms_then_join_over_tcp(self):
+        rooms = RoomManager()
+        lock = threading.RLock()
+        def on_message(conn, message):
+            with lock:
+                server.send_many(rooms.handle_message(conn, message))
+        def on_disconnect(conn):
+            with lock:
+                server.send_many(rooms.on_disconnect(conn))
+        server = TCPServer('127.0.0.1', 0, on_message, on_disconnect)
+        server.start()
+        self.addCleanup(server.close)
+        host = TCPClient('127.0.0.1', server.port)
+        viewer = TCPClient('127.0.0.1', server.port)
+        self.addCleanup(host.close)
+        self.addCleanup(viewer.close)
+        def receive(client, kind):
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                for message in client.poll_messages():
+                    if message['type'] == kind:
+                        return message
+                time.sleep(0.01)
+            self.fail('Missing ' + kind)
+        host.send({'type': 'AUTH_GUEST', 'username': 'Alice'})
+        receive(host, 'AUTH_OK')
+        self.addCleanup(rooms.auth_service.store.close)
+        host.send({'type': 'CREATE_ROOM', 'minutes': 10})
+        code = receive(host, 'WELCOME')['room_code']
+        viewer.send({'type': 'LIST_ROOMS'})
+        self.assertEqual(receive(viewer, 'ROOM_LIST')['rooms'], [{'room_code': code, 'host': 'Alice', 'minutes': 10}])
+        viewer.send({'type': 'JOIN_ROOM', 'room_code': code})
+        self.assertEqual(receive(host, 'GAME_START')['room_code'], code)
+
     def test_client_closes_unresponsive_connection_after_six_seconds(self):
         listener = socket.socket()
         listener.bind(('127.0.0.1', 0))

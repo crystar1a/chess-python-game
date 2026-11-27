@@ -14,3 +14,4 @@ server/data/*.db
 .superpowers/
 skills-lock.json
 .sessions/
+.server_address

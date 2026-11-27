@@ -80,6 +80,82 @@ class RoomManagerTests(unittest.TestCase):
     def _message_type(self, msg):
         return msg.get('type')
 
+    def test_chat_only_reaches_players_in_active_room(self):
+        self.rm.handle_message('a', {'type': 'AUTH_GUEST', 'username': 'Alice'})
+        self.addCleanup(self.rm.auth_service.store.close)
+        self.rm.handle_message('b', {'type': 'AUTH_GUEST', 'username': 'Bob'})
+        code = self.rm.handle_message('a', {'type': 'CREATE_ROOM'})[0][1]['room_code']
+        self.rm.handle_message('b', {'type': 'JOIN_ROOM', 'room_code': code})
+        self.rm.handle_message('other', {'type': 'CREATE_ROOM'})
+        deliveries = self.rm.handle_message('a', {'type': 'CHAT_SEND', 'sender': 'Fake', 'text': 'Xin chào'})
+        self.assertEqual({conn for conn, _ in deliveries}, {'a', 'b'})
+        self.assertTrue(all(msg['sender'] == 'Alice' and msg['text'] == 'Xin chào' for _, msg in deliveries))
+        self.assertEqual(self.rm.handle_message('other', {'type': 'CHAT_SEND', 'text': 'Hi'})[0][1]['type'], 'CHAT_REJECTED')
+
+    def test_chat_rejects_invalid_disconnected_and_finished(self):
+        code = self.rm.handle_message('a', {'type': 'CREATE_ROOM'})[0][1]['room_code']
+        self.rm.handle_message('b', {'type': 'JOIN_ROOM', 'room_code': code})
+        for text in ('', '   ', 'x' * 501, None, 'hi\nthere'):
+            with self.subTest(text=text):
+                self.assertEqual(self.rm.handle_message('a', {'type': 'CHAT_SEND', 'text': text})[0][1]['type'], 'CHAT_REJECTED')
+        self.assertEqual(self.rm.handle_message('a', {'type': 'CHAT_SEND', 'text': 'x' * 500})[0][1]['type'], 'CHAT_MESSAGE')
+        self.rm.on_disconnect('b')
+        self.assertEqual(self.rm.handle_message('a', {'type': 'CHAT_SEND', 'text': 'hi'})[0][1]['reason'], 'chat_unavailable')
+        self.rm._rooms[code]['match'].result = '1-0'
+        self.assertEqual(self.rm.handle_message('a', {'type': 'CHAT_SEND', 'text': 'hi'})[0][1]['reason'], 'chat_unavailable')
+
+    def test_list_rooms_only_shows_waiting_rooms(self):
+        self.rm.handle_message('host', {'type': 'AUTH_GUEST', 'username': 'Alice'})
+        self.addCleanup(self.rm.auth_service.store.close)
+        waiting = self.rm.handle_message('host', {'type': 'CREATE_ROOM', 'minutes': 10})[0][1]['room_code']
+        full = self.rm.handle_message('other', {'type': 'CREATE_ROOM'})[0][1]['room_code']
+        self.rm.handle_message('guest', {'type': 'JOIN_ROOM', 'room_code': full})
+        listing = self.rm.handle_message('viewer', {'type': 'LIST_ROOMS'})[0][1]
+        self.assertEqual(listing['type'], 'ROOM_LIST')
+        self.assertEqual(listing['rooms'], [{'room_code': waiting, 'host': 'Alice', 'minutes': 10}])
+        self.rm.on_disconnect('host')
+        self.assertEqual(self.rm.handle_message('viewer', {'type': 'LIST_ROOMS'})[0][1]['rooms'], [])
+
+    def test_list_rooms_chunks_all_entries(self):
+        for index in range(205):
+            self.rm.handle_message(f'host{index}', {'type': 'CREATE_ROOM'})
+        pages = [msg for _, msg in self.rm.handle_message('viewer', {'type': 'LIST_ROOMS'})]
+        self.assertEqual(sum(len(page['rooms']) for page in pages), 205)
+        self.assertTrue(pages[0]['first'])
+        self.assertFalse(pages[0]['complete'])
+        self.assertTrue(pages[-1]['complete'])
+
+    def test_rematch_accept_starts_fresh_game(self):
+        welcome = self.rm.handle_message('a', {'type': 'CREATE_ROOM', 'minutes': 5})[0][1]
+        self.rm.handle_message('b', {'type': 'JOIN_ROOM', 'room_code': welcome['room_code']})
+        self.rm.handle_message('a', {'type': 'RESIGN'})
+        offer = self.rm.handle_message('a', {'type': 'REMATCH_REQUEST'})
+        self.assertEqual(offer[0][0], 'b')
+        self.assertEqual(offer[0][1]['type'], 'REMATCH_REQUEST')
+        response = self.rm.handle_message('b', {'type': 'REMATCH_ACCEPT'})
+        self.assertEqual({conn for conn, _ in response}, {'a', 'b'})
+        self.assertTrue(all(msg['type'] == 'GAME_START' and msg['revision'] == 0 and msg['white_time'] == 300 for _, msg in response))
+
+    def test_rematch_declined_reopens_room_for_new_opponent(self):
+        welcome = self.rm.handle_message('a', {'type': 'CREATE_ROOM'})[0][1]
+        code = welcome['room_code']
+        self.rm.handle_message('b', {'type': 'JOIN_ROOM', 'room_code': code})
+        self.rm.handle_message('a', {'type': 'RESIGN'})
+        self.rm.handle_message('b', {'type': 'REMATCH_REQUEST'})
+        result = self.rm.handle_message('a', {'type': 'REMATCH_DECLINE'})
+        self.assertTrue(any(conn == 'a' and msg['type'] == 'REMATCH_DECLINE' for conn, msg in result))
+        self.assertTrue(any(conn == 'b' and msg['type'] == 'WELCOME' and msg['color'] == 'white' for conn, msg in result))
+        joined = self.rm.handle_message('c', {'type': 'JOIN_ROOM', 'room_code': code})
+        self.assertEqual(sum(msg['type'] == 'GAME_START' for _, msg in joined), 2)
+
+    def test_rematch_requires_finished_game_and_other_player_response(self):
+        code = self.rm.handle_message('a', {'type': 'CREATE_ROOM'})[0][1]['room_code']
+        self.rm.handle_message('b', {'type': 'JOIN_ROOM', 'room_code': code})
+        self.assertEqual(self.rm.handle_message('a', {'type': 'REMATCH_REQUEST'})[0][1]['reason'], 'rematch_unavailable')
+        self.rm.handle_message('a', {'type': 'RESIGN'})
+        self.rm.handle_message('a', {'type': 'REMATCH_REQUEST'})
+        self.assertEqual(self.rm.handle_message('a', {'type': 'REMATCH_ACCEPT'})[0][1]['reason'], 'rematch_unavailable')
+
     def test_create_room_clock_and_snapshot(self):
         for minutes in (5, 10, 15, None):
             rm = RoomManager()

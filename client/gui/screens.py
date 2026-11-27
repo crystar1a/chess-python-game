@@ -2,7 +2,7 @@ import chess
 import pygame
 
 from client.gui import theme
-from client.gui.widgets import draw_button, draw_card, draw_move_list, draw_text_input
+from client.gui.widgets import draw_button, draw_card, draw_move_list, draw_text_input, draw_chat_list
 
 
 def _draw_centered(screen, text, cx, y, fonts, size='ui', color=theme.TEXT_PRIMARY):
@@ -167,17 +167,65 @@ def draw_online_menu_screen(screen, lay, fonts, minutes, minutes_options, connec
 
     create_rect = pygame.Rect(cx - 110, card.y + 210, 220, 46)
     join_rect = pygame.Rect(cx - 110, card.y + 270, 220, 46)
-    back_rect = pygame.Rect(cx - 110, card.y + 330, 220, 46)
+    rooms_rect = pygame.Rect(cx - 110, card.y + 330, 220, 46)
+    back_rect = pygame.Rect(cx - 110, card.y + (330 if creating else 390), 220, 46)
     draw_button(screen, create_rect, 'Tạo phòng', fonts, primary=True, mouse_pos=mouse_pos, mouse_down=mouse_down)
     if not creating:
         draw_button(screen, join_rect, 'Vào phòng', fonts, mouse_pos=mouse_pos, mouse_down=mouse_down)
+        draw_button(screen, rooms_rect, 'Danh sách phòng', fonts, mouse_pos=mouse_pos, mouse_down=mouse_down)
     draw_button(screen, back_rect, 'Quay lại', fonts, mouse_pos=mouse_pos, mouse_down=mouse_down)
     hits.update({'create': create_rect, 'back': back_rect})
     if not creating:
         hits['join'] = join_rect
+        hits['rooms'] = rooms_rect
 
     if connect_error:
         _draw_centered(screen, connect_error, cx, card.bottom - 52, fonts, size='ui_small', color=theme.ERROR_TEXT)
+    return hits
+
+
+def draw_server_screen(screen, lay, fonts, address, error, now, mouse_pos, mouse_down):
+    card = lay['single_card']
+    draw_card(screen, card)
+    cx = card.centerx
+    _draw_centered(screen, 'KẾT NỐI SERVER', cx, card.y + 36, fonts, size='title')
+    _draw_centered(screen, 'Địa chỉ server (IP hoặc tên máy, cổng tùy chọn)', cx, card.y + 100, fonts, size='ui_small', color=theme.TEXT_MUTED)
+    box = pygame.Rect(cx - 170, card.y + 135, 340, 46)
+    draw_text_input(screen, box, address, '127.0.0.1:8765', True, fonts, now=now)
+    connect = pygame.Rect(cx - 110, card.y + 210, 220, 46)
+    back = pygame.Rect(cx - 110, card.y + 270, 220, 46)
+    draw_button(screen, connect, 'Tiếp tục', fonts, primary=True, mouse_pos=mouse_pos, mouse_down=mouse_down)
+    draw_button(screen, back, 'Quay lại', fonts, mouse_pos=mouse_pos, mouse_down=mouse_down)
+    if error:
+        _draw_centered(screen, error, cx, card.bottom - 52, fonts, size='ui_small', color=theme.ERROR_TEXT)
+    return {'connect': connect, 'back': back, 'box': box}
+
+
+def draw_room_list_screen(screen, lay, fonts, rooms, offset, error, mouse_pos, mouse_down):
+    card = lay['single_card']
+    draw_card(screen, card)
+    cx = card.centerx
+    _draw_centered(screen, 'PHÒNG ĐANG CHỜ', cx, card.y + 28, fonts, size='title')
+    hits = {'rooms': []}
+    if not rooms:
+        _draw_centered(screen, 'Chưa có phòng đang chờ', cx, card.y + 140, fonts, size='ui_small', color=theme.TEXT_MUTED)
+    for i, room in enumerate(rooms[offset:offset + 5]):
+        rect = pygame.Rect(card.x + 40, card.y + 82 + i * 50, card.width - 80, 42)
+        minutes = room.get('minutes')
+        title = f"{room['room_code']}  ·  {room['host']}  ·  {str(minutes) + ' phút' if minutes else 'Không giới hạn'}"
+        draw_button(screen, rect, title, fonts, mouse_pos=mouse_pos, mouse_down=mouse_down)
+        hits['rooms'].append((room['room_code'], rect))
+    prev = pygame.Rect(cx - 225, card.bottom - 118, 100, 42)
+    next_ = pygame.Rect(cx + 125, card.bottom - 118, 100, 42)
+    refresh = pygame.Rect(cx - 105, card.bottom - 118, 210, 42)
+    back = pygame.Rect(cx - 105, card.bottom - 65, 210, 42)
+    draw_button(screen, prev, 'Trước', fonts, disabled=offset == 0, mouse_pos=mouse_pos, mouse_down=mouse_down)
+    draw_button(screen, next_, 'Sau', fonts, disabled=offset + 5 >= len(rooms), mouse_pos=mouse_pos, mouse_down=mouse_down)
+    draw_button(screen, refresh, 'Làm mới', fonts, mouse_pos=mouse_pos, mouse_down=mouse_down)
+    draw_button(screen, back, 'Quay lại', fonts, mouse_pos=mouse_pos, mouse_down=mouse_down)
+    if error:
+        _draw_centered(screen, error, cx, card.bottom - 150, fonts, size='ui_small', color=theme.ERROR_TEXT)
+    hits.update({'prev': prev, 'next': next_, 'refresh': refresh, 'back': back})
     return hits
 
 
@@ -237,6 +285,23 @@ def draw_resign_confirmation(screen, fonts, mouse_pos, mouse_down):
     return {'resign_confirm': confirm, 'resign_cancel': cancel}
 
 
+def draw_rematch_confirmation(screen, fonts, mouse_pos, mouse_down):
+    width, height = screen.get_size()
+    overlay = pygame.Surface((width, height), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 175))
+    screen.blit(overlay, (0, 0))
+    modal = pygame.Rect(0, 0, min(440, width - 40), 190)
+    modal.center = (width // 2, height // 2)
+    draw_card(screen, modal, bg=theme.BG_CARD, border=theme.BORDER_FOCUS, radius=8, width=2)
+    _draw_centered(screen, 'Đối thủ muốn chơi ván mới', modal.centerx, modal.y + 24, fonts, size='ui_title')
+    _draw_centered(screen, 'Từ chối sẽ rời phòng.', modal.centerx, modal.y + 62, fonts, size='ui_small', color=theme.TEXT_MUTED)
+    accept = pygame.Rect(modal.centerx - 135, modal.bottom - 62, 125, 42)
+    decline = pygame.Rect(modal.centerx + 10, modal.bottom - 62, 125, 42)
+    draw_button(screen, accept, 'Đồng ý', fonts, primary=True, mouse_pos=mouse_pos, mouse_down=mouse_down)
+    draw_button(screen, decline, 'Từ chối', fonts, mouse_pos=mouse_pos, mouse_down=mouse_down)
+    return {'rematch_accept': accept, 'rematch_decline': decline}
+
+
 def draw_game_sidebar(
     screen,
     sidebar,
@@ -249,6 +314,14 @@ def draw_game_sidebar(
     mouse_pos,
     mouse_down,
     disconnected=False,
+    waiting=False,
+    chat_open=False,
+    chat_messages=None,
+    chat_text='',
+    chat_unread=0,
+    chat_focus=False,
+    chat_scroll=0,
+    now=0.0,
 ):
     draw_card(screen, sidebar)
     game = controller.game
@@ -259,25 +332,48 @@ def draw_game_sidebar(
     header_txt = f'TRỰC TUYẾN · {room_code}' if controller.mode == 'online' else f'ĐẤU VỚI BOT · {difficulty}'
     header_rect = _draw_centered(screen, header_txt, sidebar.centerx, sidebar.y + 14, fonts, size='ui_small', color=theme.BORDER_FOCUS)
 
-    status_txt = game.result or (controller.error if not disconnected else None) or rejected_reason
+    status_txt = (rejected_reason or 'Đang chờ đối thủ tham gia') if waiting else game.result or (controller.error if not disconnected else None) or rejected_reason
     if not status_txt:
         status_txt = 'Lượt quân Trắng' if game.board.turn == chess.WHITE else 'Lượt quân Đen'
-    status_color = theme.ERROR_TEXT if ((controller.error and not disconnected) or rejected_reason) else theme.TEXT_PRIMARY
+    status_color = theme.ERROR_TEXT if ((controller.error and not disconnected) or (rejected_reason and rejected_reason != 'Đã sao chép mã phòng')) else theme.TEXT_PRIMARY
     _draw_centered(screen, status_txt, sidebar.centerx, sidebar.y + 40, fonts, size='ui', color=status_color)
 
     btn_h = 40
-    if controller.mode == 'local':
+    if controller.mode == 'local' or game.result:
         btn_area_h = btn_h * 2 + 8 + pad
     else:
         btn_area_h = btn_h + pad
 
-    moves_rect = pygame.Rect(x, sidebar.y + 72, inner_w, max(100, sidebar.bottom - (sidebar.y + 72) - btn_area_h - 10))
-    clamped_scroll = draw_move_list(screen, moves_rect, game.move_history, fonts, scroll_offset=scroll_offset)
+    chat_available = controller.mode == 'online' and not waiting and not game.result
+    panel_top = sidebar.y + (112 if chat_available else 72)
+    moves_rect = pygame.Rect(x, panel_top, inner_w, max(100, sidebar.bottom - panel_top - btn_area_h - 10))
+    if chat_available and chat_open:
+        list_rect = pygame.Rect(moves_rect.x, moves_rect.y, moves_rect.width, max(40, moves_rect.height - 48))
+        clamped_scroll = draw_chat_list(screen, list_rect, chat_messages or [], fonts, chat_scroll)
+    else:
+        clamped_scroll = draw_move_list(screen, moves_rect, game.move_history, fonts, scroll_offset=scroll_offset)
 
     hits = {'moves_rect': moves_rect, 'scroll': clamped_scroll}
+    if chat_available:
+        toggle = pygame.Rect(x, sidebar.y + 72, inner_w, 34)
+        label = f'Chat ({chat_unread})' if chat_unread else 'Chat'
+        draw_button(screen, toggle, label, fonts, selected=chat_open, mouse_pos=mouse_pos, mouse_down=mouse_down)
+        hits['chat_toggle'] = toggle
+        if chat_open:
+            input_rect = pygame.Rect(x, moves_rect.bottom - 40, inner_w - 64, 40)
+            send_rect = pygame.Rect(input_rect.right + 4, input_rect.y, 60, 40)
+            draw_text_input(screen, input_rect, chat_text, 'Tin nhắn...', chat_focus and not disconnected, fonts, now=now)
+            draw_button(screen, send_rect, 'Gửi', fonts, primary=True, disabled=disconnected or not chat_text.strip(), mouse_pos=mouse_pos, mouse_down=mouse_down)
+            hits['chat_input'] = input_rect
+            hits['chat_send'] = send_rect
+            hits['chat_list'] = list_rect
     if controller.mode == 'online' and room_code:
         hits['room_code'] = header_rect
-    if controller.mode == 'local':
+    if waiting:
+        r1 = pygame.Rect(x, sidebar.bottom - pad - btn_h, inner_w, btn_h)
+        draw_button(screen, r1, 'Rời phòng', fonts, mouse_pos=mouse_pos, mouse_down=mouse_down)
+        hits['cancel'] = r1
+    elif controller.mode == 'local':
         r1 = pygame.Rect(x, sidebar.bottom - pad - btn_h * 2 - 8, inner_w, btn_h)
         r2 = pygame.Rect(x, sidebar.bottom - pad - btn_h, inner_w, btn_h)
         draw_button(screen, r1, 'Chơi lại / Cài đặt', fonts, primary=True, mouse_pos=mouse_pos, mouse_down=mouse_down)
@@ -288,7 +384,11 @@ def draw_game_sidebar(
         r1 = pygame.Rect(x, sidebar.bottom - pad - btn_h, inner_w, btn_h)
         ended = bool(game.result or (controller.error and not disconnected))
         if ended:
-            draw_button(screen, r1, 'Rời phòng', fonts, primary=True, mouse_pos=mouse_pos, mouse_down=mouse_down)
+            r0 = pygame.Rect(x, sidebar.bottom - pad - btn_h * 2 - 8, inner_w, btn_h)
+            draw_button(screen, r0, 'Ván đấu mới', fonts, primary=True, disabled=disconnected, mouse_pos=mouse_pos, mouse_down=mouse_down)
+            draw_button(screen, r1, 'Rời phòng', fonts, mouse_pos=mouse_pos, mouse_down=mouse_down)
+            if not disconnected:
+                hits['online_rematch'] = r0
             hits['leave'] = r1
         else:
             draw_button(screen, r1, 'Đầu hàng', fonts, danger=True, disabled=disconnected, mouse_pos=mouse_pos, mouse_down=mouse_down)

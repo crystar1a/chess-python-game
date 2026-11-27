@@ -19,7 +19,7 @@ Giữ code dễ đọc, dễ bảo trì và tránh phình to khi xây dựng th�
 
 ## Kiến trúc client–server
 
-Cấu trúc mục tiêu giữ ở mức tối giản (chỉ bổ sung đúng 5 tệp mạng khi triển khai online). Giai đoạn hiện tại lưu trữ phòng, phiên và `token` trực tiếp trên bộ nhớ RAM (`dict` bảo vệ bởi `threading.RLock`); cơ sở dữ liệu SQLite và đóng gói Docker sẽ tích hợp ở giai đoạn sau.
+Cấu trúc hiện tại dùng TCP cho chế độ online. Phòng, ván và token phiên server nằm trong RAM (`dict` bảo vệ bởi `threading.RLock`); tài khoản được lưu trong SQLite. Lịch sử ván và đóng gói Docker thuộc giai đoạn sau.
 
 ```text
 chess_online/
@@ -28,7 +28,11 @@ chess_online/
 │   ├── gui/
 │   │   ├── board_view.py
 │   │   ├── hud.py
-│   │   └── resources.py
+│   │   ├── resources.py
+│   │   ├── screens.py
+│   │   ├── widgets.py
+│   │   ├── layout.py
+│   │   └── theme.py
 │   ├── input/
 │   │   └── mouse_controller.py
 │   ├── game/
@@ -38,17 +42,17 @@ chess_online/
 │   │   └── stockfish.py
 │   └── net/
 │       ├── tcp_client.py
-│       └── udp_client.py
+│       ├── auth_client.py
+│       ├── session_store.py
+│       └── server_config.py
 ├── server/
 │   ├── main.py
-│   ├── app.py
 │   ├── rooms.py
+│   ├── auth.py
 │   ├── game/
-│   │   ├── chess_match.py
-│   │   └── rules.py
+│   │   └── chess_match.py
 │   └── net/
-│       ├── tcp_server.py
-│       └── udp_server.py
+│       └── tcp_server.py
 ├── shared/
 │   └── protocol.py
 ├── tests/
@@ -60,8 +64,8 @@ chess_online/
 └── README.md
 ```
 
-- **Client**: `main.py` khởi tạo ứng dụng; `gui/` vẽ, quản lý tài nguyên và âm thanh; `input/` xử lý chuột; `game/` điều phối thông qua `GameController`; `ai/` tích hợp Stockfish cho chế độ bot; `net/` quản lý kết nối `tcp_client.py` và `udp_client.py` đẩy sự kiện qua `queue.Queue` để không chặn vòng lặp Pygame.
-- **Server**: `app.py` điều phối dịch vụ; `rooms.py` quản lý phòng và phiên người chơi trên RAM; `server/game/` dùng `python-chess` làm nguồn sự thật duy nhất (Server-Authoritative) để kiểm tra lượt, nước đi, đồng hồ và kết quả; `server/net/` xử lý socket TCP và UDP đa luồng.
+- **Client**: `main.py` khởi tạo ứng dụng; `gui/` vẽ, quản lý tài nguyên và âm thanh; `input/` xử lý chuột; `game/` điều phối thông qua `GameController`; `ai/` tích hợp Stockfish cho chế độ bot; `net/` quản lý kết nối TCP và đẩy sự kiện qua `queue.Queue` để không chặn vòng lặp Pygame.
+- **Server**: `rooms.py` quản lý phòng và phiên người chơi trên RAM; `server/game/` dùng `python-chess` làm nguồn sự thật duy nhất để kiểm tra lượt, nước đi, đồng hồ và kết quả; `server/net/` xử lý socket TCP đa luồng.
 - **Shared**: `shared/protocol.py` định nghĩa framing 4-byte big-endian (`!I`) + JSON UTF-8 và toàn bộ cấu trúc gói tin dùng chung.
 
 ## Thiết kế bản chơi với bot
@@ -87,9 +91,13 @@ chess_online/
 - [ ] Kiểm thử đầy đủ tích hợp Stockfish bất đồng bộ, `pygame.mixer` và dọn tiến trình khi đóng hoặc bắt đầu lại ván.
 - [ ] Cập nhật TCD và UCD sau khi bản bot đạt tiêu chí. Triển khai và kiểm thử chế độ chơi mạng theo 4 bước bên dưới.
 
-## Định hướng TCP và UDP (4 Bước triển khai)
+## Định hướng mạng và chat
 
 Sử dụng thư viện chuẩn `socket` + `threading` (`ThreadPoolExecutor` cho các kết nối TCP client, `threading.RLock` bảo vệ trạng thái phòng trên RAM, `queue.Queue` giao tiếp giữa luồng mạng và luồng Pygame).
+
+Client nhập/lưu địa chỉ server và lấy danh sách tất cả phòng đang chờ từ server đó qua TCP (`LIST_ROOMS`/`ROOM_LIST`). Người chơi vẫn có thể nhập mã phòng. Không triển khai UDP, tự dò server hoặc đo độ trễ trong kế hoạch hiện tại.
+
+Người dùng đã xác nhận kiểm thử hai máy qua Tailscale thành công đối với luồng TCP và danh sách phòng trên server đã chọn. Chưa suy ra rằng các trường hợp reconnect qua hai máy đã được kiểm thử đầy đủ.
 
 1. [ ] **Bước 1 — Tách lớp Controller & Khóa chuẩn Framing (Nền tảng):**
    - Đưa toàn bộ thao tác đi quân và phong cấp qua `GameController` (chế độ local áp dụng cục bộ; chế độ online phát `MOVE_REQUEST` dạng UCI và chỉ cập nhật bàn cờ khi nhận xác nhận từ server).
@@ -102,9 +110,17 @@ Sử dụng thư viện chuẩn `socket` + `threading` (`ThreadPoolExecutor` cho
 3. [ ] **Bước 3 — Khôi phục phiên qua TCP (Reconnect 60 giây):**
    - Heartbeat TCP (`PING`/`PONG` mỗi 3s), tự động đóng socket chết sau 6s không phản hồi; kiểm tra theo chu kỳ 1s.
    - Giữ trạng thái phòng và `token` trên RAM trong 60 giây khi người chơi mất kết nối (đồng hồ vẫn chạy; quá 60s xử thua). Khi nối lại bằng `RESUME` + `token`, server trả về toàn bộ trạng thái hiện tại (màu quân, FEN, nước cuối, đồng hồ, `revision`).
-   - Thêm lựa chọn **Kết nối lại** tại Chơi Online → Vào phòng khi người chơi mở lại ứng dụng; lưu thông tin phiên riêng an toàn trên client để gửi `RESUME`, không nhận diện người chơi chỉ bằng mã phòng. Kiểm thử hết hạn, sai token và hai client cùng máy.
-4. [ ] **Bước 4 — Dò phòng LAN & Đo độ trễ qua UDP (Cổng 9999) + Giao diện Online:**
-   - Cài đặt `udp_server.py` và `udp_client.py`: hỗ trợ gửi broadcast `DISCOVER` (`255.255.255.255:9999`) để tìm phòng đang mở trong mạng LAN (vẫn giữ tùy chọn nhập `IP:port` thủ công) và gói UDP `PING`/`PONG` đo độ trễ (RTT) hiển thị trên HUD.
-   - Bổ sung menu Online tối giản trong Pygame (Tạo phòng, Danh sách phòng LAN, Nhập IP/Mã phòng).
+   - Khi mở lại ứng dụng, người chơi nhập cùng tên và mã phòng tại **Vào phòng**; client dùng phiên đã lưu để gửi `RESUME`. Phiên cục bộ hiện dùng Windows DPAPI. Cần kiểm thử đầy đủ hết hạn, sai token và các trường hợp ngắt mạng qua hai máy.
+4. [ ] **Bước 4 — Chat trong ván online qua TCP:**
+   - Cho hai người trong cùng phòng nhắn tin khi ván đang diễn ra; nút Chat chuyển đổi giữa panel chat và lịch sử nước đi. Thiết kế chi tiết: `docs/superpowers/specs/2026-11-28-room-chat-design.md`.
+   - Đã triển khai chat và kiểm thử tự động TCP, xác thực phòng, giới hạn 500 ký tự/tin và hiển thị panel. Client giữ 100 tin gần nhất trong RAM; tin bị bỏ lỡ khi ngắt kết nối không được khôi phục. Còn kiểm thử thủ công hai máy, nhập tiếng Việt và mất/kết nối lại trước khi đánh dấu hoàn tất.
+   - Đã có menu Online: nhập/lưu địa chỉ server, tạo phòng, xem danh sách phòng đang chờ từ server đã chọn và nhập mã phòng.
 
-*(Ghi chú giai đoạn sau: Lưu lịch sử ván PGN vào SQLite, xác thực tài khoản và đóng gói Docker sẽ thực hiện sau khi hoàn tất 4 bước mạng cốt lõi trên.)*
+### Tiến độ và việc tiếp theo
+
+- Đã có chế độ chơi với bot, ván online TCP, phòng và danh sách phòng, đăng nhập/đăng ký, heartbeat và reconnect, xác nhận đầu hàng, ván mới, và chat trong ván. Đã có kiểm thử tự động; người dùng xác nhận chơi online và danh sách phòng qua hai máy Tailscale thành công.
+- Ngày 28/11/2026: `python -m unittest discover -s tests` đạt 93/93 kiểm thử.
+- Tiếp theo: kiểm thử thủ công chat trên hai máy (bật/tắt panel, tin chưa đọc, tiếng Việt, tin dài/rỗng, ván kết thúc, mất/kết nối lại và ván mới); xử lý lỗi phát hiện trước khi xác nhận bước chat hoàn tất.
+- Hoàn thiện kiểm thử các trường hợp biên của reconnect, luật hết giờ và chế độ bot; sau đó cập nhật TCD/UCD theo hành vi đã kiểm chứng.
+- Lưu lịch sử ván PGN và đóng gói Docker thuộc giai đoạn sau. Chưa triển khai TLS cho TCP game, không mở server trực tiếp ra Internet công cộng trong trạng thái hiện tại.
+- Các thay đổi về ván mới, giao diện phòng chờ, danh sách phòng và chat hiện chưa commit/push.

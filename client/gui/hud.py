@@ -22,6 +22,7 @@ def draw_players(
     bar_height=PLAYER_BAR_HEIGHT,
     player_disconnected=False,
     opponent_disconnected=False,
+    waiting=False,
 ):
     if board_rect is None:
         bx, bw = 0, BOARD
@@ -33,7 +34,7 @@ def draw_players(
 
     for name, side, top in ((opponent_name, not game.player, top_y),
                             (player_name, game.player, bot_y)):
-        active = not stopped and game.board.turn == side
+        active = not waiting and not stopped and game.board.turn == side
         bar = pygame.Rect(bx, top, bw, bar_height)
         pygame.draw.rect(screen, theme.BG_CARD, bar, border_radius=5)
         pygame.draw.rect(screen, theme.BORDER_FOCUS if active else theme.BORDER, bar, width=1, border_radius=5)
@@ -52,7 +53,9 @@ def draw_players(
         screen.blit(title, (avatar.right + 10, top + 5))
 
         detail = 'Trắng' if side == chess.WHITE else 'Đen'
-        if side != game.player:
+        if waiting and side != game.player:
+            detail = 'Đang chờ người chơi'
+        elif side != game.player:
             detail += ' · ' + ('Disconnected' if opponent_disconnected else difficulty)
         elif player_disconnected:
             detail += ' · Disconnected'
