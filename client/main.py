@@ -501,7 +501,9 @@ def run():
                     controller.error = None
                     is_own = awaiting_accept
                     awaiting_accept = False
-                    if not is_own:
+                    if msg.get('game_over'):
+                        sounds.play('game-end')
+                    elif not is_own:
                         board = controller.game.board
                         sounds.play('move-check' if board.is_check() else 'move-opponent')
                 elif mtype == MessageType.MOVE_REJECTED:
@@ -518,6 +520,7 @@ def run():
                             result=result,
                         )
                         controller.error = None
+                        sounds.play('game-end')
                     else:
                         connect_error = ERROR_LABELS.get(reason, str(reason) if reason else 'Lỗi kết nối')
                         if client is not None:
