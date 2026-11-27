@@ -155,6 +155,24 @@ def run():
         last_seen_move_count = 0
         move_scroll = 0
 
+    def copy_room_code():
+        nonlocal connect_error, rejected_reason, reject_until
+        try:
+            if not pygame.scrap.get_init():
+                pygame.scrap.init()
+            pygame.scrap.put_text(room_code)
+            if state == 'waiting':
+                connect_error = 'Đã sao chép mã phòng'
+            else:
+                rejected_reason = 'Đã sao chép mã phòng'
+                reject_until = time.monotonic() + 3
+        except pygame.error:
+            if state == 'waiting':
+                connect_error = 'Không thể sao chép mã phòng'
+            else:
+                rejected_reason = 'Không thể sao chép mã phòng'
+                reject_until = time.monotonic() + 3
+
     def stop_online():
         nonlocal controller, client, awaiting_accept, room_code, is_creator, player_disconnected, opponent_disconnected
         if controller is not None:
@@ -304,7 +322,9 @@ def run():
                         room_input_active = False
 
                 elif state == 'waiting':
-                    if hits.get('cancel') and hits['cancel'].collidepoint(pos):
+                    if room_code and hits.get('room_code') and hits['room_code'].collidepoint(pos):
+                        copy_room_code()
+                    elif hits.get('cancel') and hits['cancel'].collidepoint(pos):
                         stop_online()
                         auth_generation += 1
                         auth_pending = False
@@ -313,6 +333,9 @@ def run():
 
                 elif state == 'game':
                     game = controller.game
+                    if controller.mode == 'online' and room_code and hits.get('room_code') and hits['room_code'].collidepoint(pos):
+                        copy_room_code()
+                        continue
                     if controller.mode == 'local':
                         if hits.get('rematch') and hits['rematch'].collidepoint(pos):
                             stop_online()
@@ -410,7 +433,15 @@ def run():
 
             elif event.type == pygame.KEYDOWN and state == 'join_input':
                 key = event.key
-                if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                if key == pygame.K_v and event.mod & pygame.KMOD_CTRL and room_input_active:
+                    try:
+                        if not pygame.scrap.get_init():
+                            pygame.scrap.init()
+                        pasted = pygame.scrap.get_text() or ''
+                        room_input = ''.join(ch for ch in pasted.upper() if ch.isascii() and ch.isalnum())[:6]
+                    except pygame.error:
+                        connect_error = 'Không thể đọc clipboard'
+                elif key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     if client is None and room_input.strip():
                         is_creator = False
                         connect_error = None
@@ -516,7 +547,11 @@ def run():
                     opponent_disconnected = msg.get('opponent_disconnected', False)
                     state = 'game'
                     awaiting_accept = False
-                    sounds.play('game-start')
+                    if msg.get('game_over'):
+                        delete_session(auth_session['username'], room_code)
+                        sounds.play('game-end')
+                    else:
+                        sounds.play('game-start')
                 elif mtype == 'RECONNECTING':
                     if controller is not None and state == 'game':
                         player_disconnected = True

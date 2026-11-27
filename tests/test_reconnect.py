@@ -34,13 +34,25 @@ class ReconnectTests(unittest.TestCase):
         self.assertEqual(snapshot['moves'], ['e2e4'])
         self.assertEqual(snapshot['color'], 'black')
 
-    def test_expired_session_cannot_resume(self):
+    def test_expired_session_receives_finished_game(self):
         with patch('server.rooms.time.monotonic', return_value=100) as clock:
             self.rooms.on_disconnect('black')
             clock.return_value = 161
             self.rooms.check_timeouts()
             result = self.rooms.handle_message('new_black', {'type': 'RESUME', 'token': self.black['token']})
-            self.assertEqual(result[0][1]['reason'], 'resume_expired')
+            snapshot = next(msg for conn, msg in result if conn == 'new_black' and msg['type'] == 'GAME_START')
+            self.assertTrue(snapshot['game_over'])
+            self.assertEqual(snapshot['result'], '1-0')
+            self.assertEqual(snapshot['reason'], 'Disconnected')
+
+    def test_late_resume_finishes_game_even_before_timeout_poll(self):
+        with patch('server.rooms.time.monotonic', return_value=100) as clock:
+            self.rooms.on_disconnect('black')
+            clock.return_value = 161
+            deliveries = self.rooms.handle_message('new_black', {'type': 'RESUME', 'token': self.black['token']})
+            snapshot = next(msg for conn, msg in deliveries if conn == 'new_black' and msg['type'] == 'GAME_START')
+            self.assertEqual(snapshot['result'], '1-0')
+            self.assertTrue(any(conn == 'white' and msg.get('game_over') for conn, msg in deliveries))
 
     def test_room_cannot_be_joined_as_new_player_after_disconnect(self):
         self.rooms.on_disconnect('black')

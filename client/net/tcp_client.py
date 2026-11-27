@@ -41,11 +41,7 @@ class TCPClient:
             if self._closed.is_set() or not self._token:
                 return
             self._messages.put({'type': 'RECONNECTING'})
-            deadline = time.monotonic() + 75
             while not self._closed.wait(2):
-                if time.monotonic() >= deadline:
-                    self._messages.put({'type': 'ERROR', 'reason': 'resume_expired'})
-                    return
                 candidate = None
                 try:
                     candidate = socket.create_connection((self.host, self.port), timeout=2)

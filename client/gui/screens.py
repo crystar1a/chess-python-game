@@ -8,7 +8,9 @@ from client.gui.widgets import draw_button, draw_card, draw_move_list, draw_text
 def _draw_centered(screen, text, cx, y, fonts, size='ui', color=theme.TEXT_PRIMARY):
     face = theme.pick_font(fonts, text, size)
     surf = face.render(text, True, color)
-    screen.blit(surf, surf.get_rect(midtop=(cx, y)))
+    rect = surf.get_rect(midtop=(cx, y))
+    screen.blit(surf, rect)
+    return rect
 
 
 def _draw_mini_board(screen, rect, pieces):
@@ -199,8 +201,9 @@ def draw_waiting_screen(screen, lay, fonts, room_code, controller, is_creator, c
     draw_card(screen, card)
     cx = card.centerx
     _draw_centered(screen, 'ĐANG CHỜ ĐỐI THỦ', cx, card.y + 44, fonts, size='title')
+    code_rect = None
     if room_code:
-        _draw_centered(screen, f'Mã phòng: {room_code}', cx, card.y + 120, fonts, size='ui_title', color=theme.BORDER_FOCUS)
+        code_rect = _draw_centered(screen, f'Mã phòng: {room_code}', cx, card.y + 120, fonts, size='ui_title', color=theme.BORDER_FOCUS)
     if controller is not None:
         side = 'Trắng' if controller.game.player == chess.WHITE else 'Đen'
         _draw_centered(screen, f'Bạn cầm quân: {side}', cx, card.y + 160, fonts, size='ui')
@@ -210,7 +213,7 @@ def draw_waiting_screen(screen, lay, fonts, room_code, controller, is_creator, c
     draw_button(screen, cancel_rect, 'Hủy', fonts, mouse_pos=mouse_pos, mouse_down=mouse_down)
     if connect_error:
         _draw_centered(screen, connect_error, cx, card.bottom - 36, fonts, size='ui_small', color=theme.ERROR_TEXT)
-    return {'cancel': cancel_rect}
+    return {'cancel': cancel_rect, 'room_code': code_rect}
 
 
 def draw_game_sidebar(
@@ -233,7 +236,7 @@ def draw_game_sidebar(
     x = sidebar.x + pad
 
     header_txt = f'TRỰC TUYẾN · {room_code}' if controller.mode == 'online' else f'ĐẤU VỚI BOT · {difficulty}'
-    _draw_centered(screen, header_txt, sidebar.centerx, sidebar.y + 14, fonts, size='ui_small', color=theme.BORDER_FOCUS)
+    header_rect = _draw_centered(screen, header_txt, sidebar.centerx, sidebar.y + 14, fonts, size='ui_small', color=theme.BORDER_FOCUS)
 
     status_txt = game.result or (controller.error if not disconnected else None) or rejected_reason
     if not status_txt:
@@ -251,6 +254,8 @@ def draw_game_sidebar(
     clamped_scroll = draw_move_list(screen, moves_rect, game.move_history, fonts, scroll_offset=scroll_offset)
 
     hits = {'moves_rect': moves_rect, 'scroll': clamped_scroll}
+    if controller.mode == 'online' and room_code:
+        hits['room_code'] = header_rect
     if controller.mode == 'local':
         r1 = pygame.Rect(x, sidebar.bottom - pad - btn_h * 2 - 8, inner_w, btn_h)
         r2 = pygame.Rect(x, sidebar.bottom - pad - btn_h, inner_w, btn_h)

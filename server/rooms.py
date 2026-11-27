@@ -198,10 +198,10 @@ class RoomManager:
             if color is None:
                 continue
             deadline = room['disconnected'].get(color)
-            if deadline is None or time.monotonic() >= deadline:
+            if deadline is None:
                 return [(conn_id, make_message(MessageType.ERROR, reason='resume_expired'))]
             match = room['match']
-            match.check_timeout()
+            deliveries = self.check_timeouts()
             room['disconnected'].pop(color)
             room['white_conn' if color == chess.WHITE else 'black_conn'] = conn_id
             self._conn_to_room[conn_id] = code
@@ -209,7 +209,7 @@ class RoomManager:
             result, _, reason = (match.result or '').partition(' - ')
             snapshot = make_message(MessageType.GAME_START, room_code=code, color=match._color_name(color), fen=match.board.fen(), turn=match._color_name(match.board.turn), revision=match.revision, white_time=match.white_time, black_time=match.black_time, game_over=bool(match.result), result=result or None, reason=reason or None, moves=[move.uci() for move in match.board.move_stack], white_name=room['white_name'], black_name=room['black_name'], opponent_disconnected=not color in room['disconnected'])
             opponent = room['black_conn' if color == chess.WHITE else 'white_conn']
-            return [(conn_id, snapshot)] + ([(opponent, make_message(MessageType.ROOM_STATE, reason='opponent_reconnected'))] if opponent else [])
+            return deliveries + [(conn_id, snapshot)] + ([(opponent, make_message(MessageType.ROOM_STATE, reason='opponent_reconnected'))] if opponent else [])
         return [(conn_id, make_message(MessageType.ERROR, reason='invalid_resume_token'))]
 
     def check_timeouts(self):
