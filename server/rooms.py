@@ -1,6 +1,7 @@
 import string
 import threading
-import uuid
+import secrets
+import time
 
 import chess
 
@@ -33,6 +34,10 @@ class RoomManager:
                 return self._handle_join_room(conn_id, msg)
             if msg_type == MessageType.MOVE_REQUEST:
                 return self._handle_move_request(conn_id, msg)
+            if msg_type == MessageType.RESUME:
+                return self._handle_resume(conn_id, msg)
+            if msg_type == MessageType.PING:
+                return [(conn_id, make_message(MessageType.PONG))]
             if msg_type == MessageType.RESIGN:
                 return self._handle_resign(conn_id, msg)
             if msg_type == MessageType.DRAW_OFFER:
@@ -77,10 +82,12 @@ class RoomManager:
         code = self._make_room_code()
         while code in self._rooms:
             code = self._make_room_code()
-        token = str(uuid.uuid4())
+        token = secrets.token_urlsafe(32)
         room = {
             'code': code,
             'token': token,
+            'black_token': secrets.token_urlsafe(32),
+            'disconnected': {},
             'white_conn': conn_id,
             'black_conn': None,
             'match': None,
@@ -101,7 +108,7 @@ class RoomManager:
         room = self._rooms.get(code)
         if room is None:
             return [(conn_id, make_message(MessageType.ERROR, reason='room_not_found'))]
-        if room['black_conn'] is not None:
+        if room['black_conn'] is not None or room['match'] is not None:
             return [(conn_id, make_message(MessageType.ERROR, reason='room_full'))]
 
         room['black_conn'] = conn_id
@@ -125,13 +132,15 @@ class RoomManager:
             white_name=self._conn_to_user.get(room['white_conn'], {}).get('username', 'White'),
             black_name=self._conn_to_user.get(conn_id, {}).get('username', 'Black'),
         )
+        room['white_name'] = game_start['white_name']
+        room['black_name'] = game_start['black_name']
 
         return [
             (room['white_conn'], game_start),
             (conn_id, make_message(
                 MessageType.WELCOME,
                 room_code=code,
-                token=room['token'],
+                token=room['black_token'],
                 color='black',
             )),
             (conn_id, game_start),
@@ -166,16 +175,42 @@ class RoomManager:
         with self._lock:
             self._conn_to_user.pop(conn_id, None)
             code = self._conn_to_room.pop(conn_id, None)
-            self._conn_to_color.pop(conn_id, None)
-            room = self._rooms.pop(code, None)
+            color = self._conn_to_color.pop(conn_id, None)
+            room = self._rooms.get(code)
             if room is None:
                 return []
-            opponent = room['black_conn'] if room['white_conn'] == conn_id else room['white_conn']
+            if room['match'] is None:
+                self._rooms.pop(code, None)
+                return []
+            room['disconnected'][color] = time.monotonic() + 60
+            room['white_conn' if color == chess.WHITE else 'black_conn'] = None
+            opponent = room['black_conn' if color == chess.WHITE else 'white_conn']
             if opponent is None:
                 return []
-            self._conn_to_room.pop(opponent, None)
-            self._conn_to_color.pop(opponent, None)
-            return [(opponent, make_message(MessageType.ERROR, reason='opponent_disconnected', game_over=True))]
+            return [(opponent, make_message(MessageType.ROOM_STATE, reason='opponent_disconnected', game_over=False))]
+
+    def _handle_resume(self, conn_id, msg):
+        token = msg.get('token')
+        if not isinstance(token, str) or not token or not token.isascii():
+            return [(conn_id, make_message(MessageType.ERROR, reason='invalid_resume_token'))]
+        for code, room in self._rooms.items():
+            color = chess.WHITE if secrets.compare_digest(token, room['token']) else chess.BLACK if secrets.compare_digest(token, room['black_token']) else None
+            if color is None:
+                continue
+            deadline = room['disconnected'].get(color)
+            if deadline is None or time.monotonic() >= deadline:
+                return [(conn_id, make_message(MessageType.ERROR, reason='resume_expired'))]
+            match = room['match']
+            match.check_timeout()
+            room['disconnected'].pop(color)
+            room['white_conn' if color == chess.WHITE else 'black_conn'] = conn_id
+            self._conn_to_room[conn_id] = code
+            self._conn_to_color[conn_id] = color
+            result, _, reason = (match.result or '').partition(' - ')
+            snapshot = make_message(MessageType.GAME_START, room_code=code, color=match._color_name(color), fen=match.board.fen(), turn=match._color_name(match.board.turn), revision=match.revision, white_time=match.white_time, black_time=match.black_time, game_over=bool(match.result), result=result or None, reason=reason or None, moves=[move.uci() for move in match.board.move_stack], white_name=room['white_name'], black_name=room['black_name'])
+            opponent = room['black_conn' if color == chess.WHITE else 'white_conn']
+            return [(conn_id, snapshot)] + ([(opponent, make_message(MessageType.ROOM_STATE, reason='opponent_reconnected'))] if opponent else [])
+        return [(conn_id, make_message(MessageType.ERROR, reason='invalid_resume_token'))]
 
     def check_timeouts(self):
         with self._lock:
@@ -184,7 +219,14 @@ class RoomManager:
                 if room['match'] is not None:
                     message = room['match'].check_timeout()
                     if message:
-                        deliveries.extend((conn_id, message) for conn_id in (room['white_conn'], room['black_conn']))
+                        deliveries.extend((conn_id, message) for conn_id in (room['white_conn'], room['black_conn']) if conn_id)
+                    expired = [color for color, deadline in room['disconnected'].items() if time.monotonic() >= deadline]
+                    if expired and room['match'].result is None:
+                        result = '1/2-1/2' if len(room['disconnected']) == 2 else ('0-1' if expired[0] == chess.WHITE else '1-0')
+                        room['match'].result = result + ' - Disconnected'
+                        room['match'].revision += 1
+                        message = make_message(MessageType.MOVE_ACCEPTED, fen=room['match'].board.fen(), turn=room['match']._color_name(room['match'].board.turn), revision=room['match'].revision, white_time=room['match'].white_time, black_time=room['match'].black_time, game_over=True, result=result, reason='Disconnected')
+                        deliveries.extend((conn_id, message) for conn_id in (room['white_conn'], room['black_conn']) if conn_id)
             return deliveries
 
     def _handle_resign(self, conn_id, msg):

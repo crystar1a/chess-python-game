@@ -13,3 +13,4 @@ server/data/*.db
 .claude/
 .superpowers/
 skills-lock.json
+.sessions/

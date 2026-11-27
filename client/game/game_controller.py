@@ -88,12 +88,24 @@ class Controller:
             return
         self._legacy_snapshot = False
         new_board = chess.Board(message['fen'])
-        self._record_snapshot_move(
-            prev_board,
-            new_board,
-            uci=message.get('uci'),
-            reset=(message.get('revision') == 0),
-        )
+        if 'moves' in message:
+            replay = chess.Board()
+            history = []
+            for uci in message['moves']:
+                move = replay.parse_uci(uci)
+                history.append(replay.san(move))
+                replay.push(move)
+            if replay.fen() != new_board.fen():
+                raise ValueError('Snapshot history does not match position')
+            game.move_history = history
+            game.last_move = replay.peek() if replay.move_stack else None
+        else:
+            self._record_snapshot_move(
+                prev_board,
+                new_board,
+                uci=message.get('uci'),
+                reset=(message.get('revision') == 0),
+            )
         game.board = new_board
         self.revision = message['revision']
         white_time, black_time = message['white_time'], message['black_time']

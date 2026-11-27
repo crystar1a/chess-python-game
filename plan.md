@@ -98,9 +98,11 @@ Sử dụng thư viện chuẩn `socket` + `threading` (`ThreadPoolExecutor` cho
    - Cài đặt `tcp_server.py` và `tcp_client.py` bằng `socket` + `threading`.
    - Server giữ `python-chess.Board` duy nhất trong `ChessMatch`, kiểm tra lượt, nước đi hợp lệ, tăng `revision` sau mỗi nước đi (`MOVE_REQUEST` gửi kèm `expected_revision`).
    - Đồng hồ tính trên server bằng `time.monotonic()`, gửi kèm thời gian còn lại qua TCP trong `GAME_START` và `MOVE_ACCEPTED`; client tự đếm ngược hiển thị giữa hai nước đi. Chơi trọn một ván PvP qua localhost với phòng tạo bằng mã.
+   - Người dùng xác nhận đã kiểm thử thủ công TCP thành công. Các tiêu chí chi tiết còn lại cần đối chiếu trước khi đánh dấu hoàn tất bước 2.
 3. [ ] **Bước 3 — Khôi phục phiên qua TCP (Reconnect 60 giây):**
    - Bổ sung heartbeat TCP (`PING`/`PONG` mỗi 3s), tự động đóng socket chết nếu quá 12s không phản hồi.
    - Giữ trạng thái phòng và `token` trên RAM trong 60 giây khi người chơi mất kết nối (đồng hồ vẫn chạy; quá 60s xử thua). Khi nối lại bằng `RESUME` + `token`, server trả về toàn bộ trạng thái hiện tại (màu quân, FEN, nước cuối, đồng hồ, `revision`).
+   - Thêm lựa chọn **Kết nối lại** tại Chơi Online → Vào phòng khi người chơi mở lại ứng dụng; lưu thông tin phiên riêng an toàn trên client để gửi `RESUME`, không nhận diện người chơi chỉ bằng mã phòng. Kiểm thử hết hạn, sai token và hai client cùng máy.
 4. [ ] **Bước 4 — Dò phòng LAN & Đo độ trễ qua UDP (Cổng 9999) + Giao diện Online:**
    - Cài đặt `udp_server.py` và `udp_client.py`: hỗ trợ gửi broadcast `DISCOVER` (`255.255.255.255:9999`) để tìm phòng đang mở trong mạng LAN (vẫn giữ tùy chọn nhập `IP:port` thủ công) và gói UDP `PING`/`PONG` đo độ trễ (RTT) hiển thị trên HUD.
    - Bổ sung menu Online tối giản trong Pygame (Tạo phòng, Danh sách phòng LAN, Nhập IP/Mã phòng).

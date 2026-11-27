@@ -1,6 +1,7 @@
 import socket
 import threading
 import uuid
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from shared.protocol import DEFAULT_TCP_PORT, encode_frame, recv_frame
@@ -19,6 +20,8 @@ class TCPServer:
         self._thread = None
         self._executor = None
         self._closed = False
+        self._last_seen = {}
+        self._watch_stop = threading.Event()
 
     def start(self):
         with self._lock:
@@ -38,6 +41,18 @@ class TCPServer:
             self._executor = ThreadPoolExecutor()
             self._thread = threading.Thread(target=self._accept, daemon=True)
             self._thread.start()
+            threading.Thread(target=self._watch_connections, daemon=True).start()
+
+    def _watch_connections(self):
+        while not self._watch_stop.wait(1):
+            with self._lock:
+                expired = [self.connections[key] for key, seen in self._last_seen.items()
+                           if time.monotonic() - seen > 12 and key in self.connections]
+            for conn in expired:
+                try:
+                    conn.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
 
     def _accept(self):
         while True:
@@ -53,19 +68,24 @@ class TCPServer:
                     break
                 conn_id = uuid.uuid4().hex
                 self.connections[conn_id] = conn
+                self._last_seen[conn_id] = time.monotonic()
                 self._send_locks[conn_id] = threading.Lock()
                 self._executor.submit(self._receive, conn_id, conn)
 
     def _receive(self, conn_id, conn):
         try:
             while True:
-                self.on_message(conn_id, recv_frame(conn))
+                message = recv_frame(conn)
+                with self._lock:
+                    self._last_seen[conn_id] = time.monotonic()
+                self.on_message(conn_id, message)
         except (EOFError, OSError, ValueError):
             pass
         finally:
             with self._lock:
                 self.connections.pop(conn_id, None)
                 self._send_locks.pop(conn_id, None)
+                self._last_seen.pop(conn_id, None)
             conn.close()
             self.on_disconnect(conn_id)
 
@@ -89,6 +109,7 @@ class TCPServer:
             if self._closed:
                 return
             self._closed = True
+            self._watch_stop.set()
             listener = self._listener
             connections = list(self.connections.values())
         if listener:

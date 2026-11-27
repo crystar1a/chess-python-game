@@ -96,13 +96,13 @@ class RoomManagerTests(unittest.TestCase):
         for minutes in (True, 0, 7, '5'):
             self.assertEqual(self.rm.handle_message('a', {'type': 'CREATE_ROOM', 'minutes': minutes})[0][1]['type'], 'ERROR')
 
-    def test_disconnect_closes_room_and_notifies_opponent(self):
+    def test_disconnect_keeps_room_and_notifies_opponent(self):
         code = self.rm.handle_message('a', {'type': 'CREATE_ROOM'})[0][1]['room_code']
         self.rm.handle_message('b', {'type': 'JOIN_ROOM', 'room_code': code})
         deliveries = self.rm.on_disconnect('a')
         self.assertEqual(deliveries[0][0], 'b')
         self.assertEqual(deliveries[0][1]['reason'], 'opponent_disconnected')
-        self.assertEqual(self.rm.handle_message('b', {'type': 'MOVE_REQUEST', 'uci': 'e7e5', 'expected_revision': 0})[0][1]['reason'], 'no_active_match')
+        self.assertEqual(self.rm.handle_message('b', {'type': 'MOVE_REQUEST', 'uci': 'e7e5', 'expected_revision': 0})[0][1]['reason'], 'not_your_turn')
 
     def test_timeout_broadcast_without_move(self):
         from unittest.mock import patch

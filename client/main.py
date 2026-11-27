@@ -22,6 +22,7 @@ from client.gui.screens import (
 )
 from client.input.mouse_controller import resolve_drop, select_square, square_at
 from client.net.auth_client import ConnectionUnavailable, exchange
+from client.net.session_store import save_session, room_request, delete_session
 from server.auth import normalize_username
 from shared.protocol import DEFAULT_TCP_PORT, MessageType, make_message
 
@@ -38,6 +39,8 @@ ERROR_LABELS = {
     'resigned': 'Đối thủ đã đầu hàng',
     'draw_accepted': 'Hòa theo thỏa thuận',
     'unknown_message_type': 'Lỗi giao thức',
+    'resume_expired': 'Phiên kết nối lại đã hết hạn',
+    'invalid_resume_token': 'Phiên kết nối lại không hợp lệ',
 }
 
 
@@ -169,12 +172,11 @@ def run():
             client.send(msg)
             return True
         except OSError:
-            connect_error = 'Mất kết nối tới server.'
-            state = 'online_menu'
-            if client is not None:
-                client.close()
-                client = None
-            controller = None
+            if controller is not None and controller.mode == 'online':
+                controller.error = 'Mất kết nối. Đang kết nối lại...'
+            else:
+                connect_error = 'Mất kết nối tới server.'
+                state = 'online_menu'
             return False
 
     def on_move_intent(uci, expected_revision):
@@ -287,7 +289,8 @@ def run():
                     if hits.get('join') and hits['join'].collidepoint(pos):
                         if client is None and room_input.strip():
                             is_creator = False
-                            begin_room(make_message(MessageType.JOIN_ROOM, room_code=room_input.strip().upper()))
+                            connect_error = None
+                            begin_room(room_request(auth_session['username'], room_input))
                     elif hits.get('back') and hits['back'].collidepoint(pos):
                         state = 'online_menu'
                         stop_online()
@@ -406,7 +409,8 @@ def run():
                 if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     if client is None and room_input.strip():
                         is_creator = False
-                        begin_room(make_message(MessageType.JOIN_ROOM, room_code=room_input.strip().upper()))
+                        connect_error = None
+                        begin_room(room_request(auth_session['username'], room_input))
                 elif key == pygame.K_BACKSPACE:
                     room_input = room_input[:-1]
                 elif key == pygame.K_ESCAPE:
@@ -453,6 +457,8 @@ def run():
                     client = connection
                     auth_session['offline_guest'] = False
                     safe_send(pending_room)
+                    if pending_room.get('type') == MessageType.RESUME:
+                        client.enable_reconnect(pending_room['token'])
             elif kind == MessageType.AUTH_NEEDS_REGISTER and purpose in ('entry', 'enter_online'):
                 connection.close()
                 auth_modal = True
@@ -480,6 +486,11 @@ def run():
                 if mtype == MessageType.WELCOME:
                     room_code = msg.get('room_code')
                     name = msg.get('color')
+                    client.enable_reconnect(msg['token'])
+                    try:
+                        save_session(auth_session['username'], room_code, msg['token'], name)
+                    except (OSError, ValueError):
+                        connect_error = 'Không thể lưu phiên kết nối lại'
                     color = chess.WHITE if name == 'white' else chess.BLACK
                     is_creator = name == 'white'
                     if controller is None:
@@ -489,6 +500,10 @@ def run():
                         )
                     sounds.play('notify')
                 elif mtype == MessageType.GAME_START:
+                    if controller is None:
+                        color = chess.WHITE if msg.get('color') == 'white' else chess.BLACK
+                        room_code = msg.get('room_code')
+                        controller = Controller(color, online_minutes, 'Normal', mode='online', on_online_move_intent=on_move_intent)
                     opponent_name = msg.get('black_name' if color == chess.WHITE else 'white_name', 'Đối thủ')
                     controller.apply_server_snapshot(msg)
                     reset_board_ui()
@@ -496,12 +511,24 @@ def run():
                     state = 'game'
                     awaiting_accept = False
                     sounds.play('game-start')
+                elif mtype == 'RECONNECTING':
+                    if controller is not None and state == 'game':
+                        controller.error = 'Mất kết nối. Đang kết nối lại...'
+                        awaiting_accept = True
+                elif mtype == MessageType.ROOM_STATE:
+                    if msg.get('reason') == 'opponent_disconnected':
+                        rejected_reason = 'Đối thủ mất kết nối'
+                        reject_until = now + 5
+                    elif msg.get('reason') == 'opponent_reconnected':
+                        rejected_reason = 'Đối thủ đã kết nối lại'
+                        reject_until = now + 5
                 elif mtype == MessageType.MOVE_ACCEPTED:
                     controller.apply_server_snapshot(msg)
                     controller.error = None
                     is_own = awaiting_accept
                     awaiting_accept = False
                     if msg.get('game_over'):
+                        delete_session(auth_session['username'], room_code)
                         sounds.play('game-end')
                     elif not is_own:
                         board = controller.game.board
@@ -513,6 +540,7 @@ def run():
                 elif mtype == MessageType.ERROR:
                     reason = msg.get('reason')
                     if state == 'game' and reason in ('resigned', 'draw_accepted', 'opponent_disconnected'):
+                        delete_session(auth_session['username'], room_code)
                         result = msg.get('result') or reason
                         controller.apply_server_snapshot(
                             controller.game.board.fen(),
