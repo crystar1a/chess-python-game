@@ -18,6 +18,7 @@ from client.gui.screens import (
     draw_join_input_screen,
     draw_menu_screen,
     draw_online_menu_screen,
+    draw_resign_confirmation,
     draw_waiting_screen,
 )
 from client.input.mouse_controller import resolve_drop, select_square, square_at
@@ -88,6 +89,7 @@ def run():
     move_scroll = 0
 
     awaiting_accept = False
+    resign_modal = False
     player_disconnected = False
     opponent_disconnected = False
     rejected_reason = None
@@ -215,6 +217,8 @@ def run():
 
     while running:
         now = time.monotonic()
+        if resign_modal and (state != 'game' or controller is None or controller.game.result or player_disconnected or opponent_disconnected):
+            resign_modal = False
         if rejected_reason and now > reject_until:
             rejected_reason = None
 
@@ -293,6 +297,16 @@ def run():
                         state = 'menu'
 
                 elif state == 'online_menu':
+                    if hits.get('create') and hits['create'].collidepoint(pos):
+                        state = 'create_room'
+                    elif hits.get('join') and hits['join'].collidepoint(pos):
+                        state = 'join_input'
+                        room_input = ''
+                        room_input_active = True
+                    elif hits.get('back') and hits['back'].collidepoint(pos):
+                        state = 'menu'
+
+                elif state == 'create_room':
                     for val, rect in hits.get('minutes', {}).items():
                         if rect.collidepoint(pos):
                             online_minutes = val
@@ -300,12 +314,8 @@ def run():
                         if client is None:
                             is_creator = True
                             begin_room(make_message(MessageType.CREATE_ROOM, minutes=online_minutes))
-                    elif hits.get('join') and hits['join'].collidepoint(pos):
-                        state = 'join_input'
-                        room_input = ''
-                        room_input_active = True
                     elif hits.get('back') and hits['back'].collidepoint(pos):
-                        state = 'menu'
+                        state = 'online_menu'
 
                 elif state == 'join_input':
                     if hits.get('join') and hits['join'].collidepoint(pos):
@@ -333,6 +343,14 @@ def run():
 
                 elif state == 'game':
                     game = controller.game
+                    if resign_modal:
+                        if hits.get('resign_cancel') and hits['resign_cancel'].collidepoint(pos):
+                            resign_modal = False
+                        elif hits.get('resign_confirm') and hits['resign_confirm'].collidepoint(pos):
+                            resign_modal = False
+                            if client is not None and not player_disconnected and not opponent_disconnected and not game.result and not controller.error:
+                                safe_send(make_message(MessageType.RESIGN))
+                        continue
                     if controller.mode == 'online' and room_code and hits.get('room_code') and hits['room_code'].collidepoint(pos):
                         copy_room_code()
                         continue
@@ -351,8 +369,7 @@ def run():
                             state = 'online_menu'
                             continue
                         if hits.get('resign') and hits['resign'].collidepoint(pos) and not player_disconnected and not opponent_disconnected:
-                            if client is not None:
-                                safe_send(make_message(MessageType.RESIGN))
+                            resign_modal = True
                             continue
 
                     if game.result or controller.error or game.board.turn != game.player or controller.thinking or awaiting_accept:
@@ -405,6 +422,9 @@ def run():
                 else:
                     selected, promotion, _ = select_square(event.pos, controller, selected, b_orig, sq_sz)
                 drag_state = None
+
+            elif event.type == pygame.KEYDOWN and state == 'game' and resign_modal and event.key == pygame.K_ESCAPE:
+                resign_modal = False
 
             elif event.type == pygame.KEYDOWN and state == 'menu' and not auth_saved:
                 key = event.key
@@ -554,11 +574,13 @@ def run():
                         sounds.play('game-start')
                 elif mtype == 'RECONNECTING':
                     if controller is not None and state == 'game':
+                        resign_modal = False
                         player_disconnected = True
                         controller.error = 'Mất kết nối. Đang kết nối lại...'
                         awaiting_accept = True
                 elif mtype == MessageType.ROOM_STATE:
                     if msg.get('reason') == 'opponent_disconnected':
+                        resign_modal = False
                         opponent_disconnected = True
                     elif msg.get('reason') == 'opponent_reconnected':
                         opponent_disconnected = False
@@ -695,6 +717,8 @@ def run():
                     promotion[1], game.player, win_w, win_h, lay['board_rect'].topleft, lay['square_size']
                 )
                 draw_promotion_bubble(screen, bubble, rects_p, pieces, game.player, arrow_x, mouse_pos)
+            if resign_modal and not game.result:
+                hits = draw_resign_confirmation(screen, fonts, mouse_pos, mouse_down)
         else:
             lay = compute_lobby_layout(win_w, win_h)
             fonts = theme.get_fonts(lay['scale'])
@@ -722,8 +746,8 @@ def run():
                 )
             elif state == 'bot_setup':
                 hits = draw_bot_setup_screen(screen, lay, fonts, difficulty, color, minutes, MINUTES_OPTIONS, mouse_pos, mouse_down)
-            elif state == 'online_menu':
-                hits = draw_online_menu_screen(screen, lay, fonts, online_minutes, MINUTES_OPTIONS, connect_error, mouse_pos, mouse_down)
+            elif state in ('online_menu', 'create_room'):
+                hits = draw_online_menu_screen(screen, lay, fonts, online_minutes, MINUTES_OPTIONS, connect_error, mouse_pos, mouse_down, creating=state == 'create_room')
             elif state == 'join_input':
                 hits = draw_join_input_screen(screen, lay, fonts, room_input, room_input_active, connect_error, now, mouse_pos, mouse_down)
             elif state == 'waiting':

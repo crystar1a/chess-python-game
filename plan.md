@@ -66,7 +66,7 @@ chess_online/
 
 ## Thiết kế bản chơi với bot
 
-1. Khởi tạo `pygame-ce`; khi chọn chơi với bot, cho chọn độ khó **Easy (3 ply)**, **Normal (8 ply)** hoặc **Hard (15 ply)**, sau đó chọn thời gian 5, 10, 15 phút hoặc không tính thời gian và màu trắng hoặc đen, rồi bắt đầu ván. Cả engine local và REST API dùng chung bộ độ sâu này. Vẽ bàn cờ 8×8, scale ảnh quân theo ô và đặt quân của người chơi ở phía dưới.
+1. Khởi tạo `pygame-ce`; khi chọn chơi với bot, cho chọn độ khó **Easy (5 ply)**, **Normal (10 ply)** hoặc **Hard (15 ply)**, sau đó chọn thời gian 5, 10, 15 phút hoặc không tính thời gian và màu trắng hoặc đen, rồi bắt đầu ván. Cả engine local và REST API dùng chung bộ độ sâu này. Vẽ bàn cờ 8×8, scale ảnh quân theo ô và đặt quân của người chơi ở phía dưới.
 2. Chọn quân của người chơi bằng chuột và đánh dấu các ô đích hợp lệ. Quân trắng đi trước; nếu người chơi chọn đen, bot đi nước đầu. Chỉ thực hiện nước đi được `python-chess` xác nhận; bỏ qua thao tác ngoài bàn cờ và nước sai.
 3. Khi phong cấp, cho chọn hậu, xe, tượng hoặc mã trước khi gửi nước đi. Hiển thị lượt và kết quả ván.
 4. Gửi bản sao vị trí cho Stockfish với giới hạn độ sâu đã chọn. Chạy tác vụ engine ngoài vòng lặp giao diện; khóa nước đi của người chơi khi chờ. Kiểm tra kết quả engine hợp lệ và còn thuộc ván hiện tại.
@@ -81,7 +81,7 @@ chess_online/
 - [x] Chuyển mã từ `src/` sang cấu trúc `client/` theo trách nhiệm trên; cập nhật điểm vào, import và kiểm thử.
 - [x] Tạo cấu trúc tối thiểu, dependencies và hướng dẫn chạy; đưa asset vào dự án.
 - [x] Xây lớp quản lý ván dựa trên `python-chess`; đã có kiểm thử cơ bản cho nước hợp lệ và không hợp lệ.
-- [x] Thống nhất độ sâu tìm kiếm Easy 3, Normal 8, Hard 15 cho cả local và REST API (14/14 unit test đạt).
+- [x] Thống nhất độ sâu tìm kiếm Easy 5, Normal 10, Hard 15 cho cả local và REST API.
 - [ ] Hoàn thiện và kiểm thử menu, bàn cờ và phong cấp: kiểm thử đầy đủ luồng chọn chế độ, màu quân, thời gian và 4 lựa chọn phong cấp.
 - [ ] Hoàn thiện đồng hồ: bao phủ đầy đủ các thế cờ không thể chiếu hết khi một bên hết giờ.
 - [ ] Kiểm thử đầy đủ tích hợp Stockfish bất đồng bộ, `pygame.mixer` và dọn tiến trình khi đóng hoặc bắt đầu lại ván.

@@ -1,5 +1,9 @@
 import unittest
 
+import pygame
+
+from client.gui import theme
+from client.gui.screens import draw_online_menu_screen, draw_resign_confirmation
 from client.gui.layout import (
     MIN_HEIGHT,
     MIN_WIDTH,
@@ -10,6 +14,28 @@ from client.gui.layout import (
 
 
 class LayoutTests(unittest.TestCase):
+    def test_resign_confirmation_has_separate_buttons(self):
+        pygame.font.init()
+        surface = pygame.Surface((960, 680))
+        fonts = theme.get_fonts(compute_lobby_layout(960, 680)['scale'])
+        hits = draw_resign_confirmation(surface, fonts, (0, 0), False)
+        self.assertFalse(hits['resign_confirm'].colliderect(hits['resign_cancel']))
+        self.assertTrue(surface.get_rect().contains(hits['resign_confirm']))
+        self.assertTrue(surface.get_rect().contains(hits['resign_cancel']))
+
+    def test_online_time_options_only_during_room_creation(self):
+        pygame.font.init()
+        lay = compute_lobby_layout(960, 680)
+        surface = pygame.Surface((960, 680))
+        fonts = theme.get_fonts(lay['scale'])
+        args = (surface, lay, fonts, 10, (5, 10, 15, None), None, (0, 0), False)
+        menu = draw_online_menu_screen(*args)
+        setup = draw_online_menu_screen(*args, creating=True)
+        self.assertEqual(menu['minutes'], {})
+        self.assertIn('join', menu)
+        self.assertEqual(set(setup['minutes']), {5, 10, 15, None})
+        self.assertNotIn('join', setup)
+
     def test_clamp_enforces_minimum(self):
         self.assertEqual(clamp_window_size(400, 300), (MIN_WIDTH, MIN_HEIGHT))
         self.assertEqual(clamp_window_size(1200, 800), (1200, 800))

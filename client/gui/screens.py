@@ -149,28 +149,32 @@ def draw_bot_setup_screen(screen, lay, fonts, difficulty, color, minutes, minute
     return hits
 
 
-def draw_online_menu_screen(screen, lay, fonts, minutes, minutes_options, connect_error, mouse_pos, mouse_down):
+def draw_online_menu_screen(screen, lay, fonts, minutes, minutes_options, connect_error, mouse_pos, mouse_down, creating=False):
     card = lay['single_card']
     draw_card(screen, card)
     cx = card.centerx
-    _draw_centered(screen, 'CHƠI ONLINE', cx, card.y + 32, fonts, size='title')
-    _draw_centered(screen, 'Thời gian mỗi bên', cx, card.y + 98, fonts, size='ui_small', color=theme.TEXT_MUTED)
+    _draw_centered(screen, 'TẠO PHÒNG' if creating else 'CHƠI ONLINE', cx, card.y + 32, fonts, size='title')
 
     hits = {'minutes': {}}
-    mw = min(132, (card.width - 100) // 4)
-    mx0 = cx - (mw * 4 + 30) // 2
-    for i, m in enumerate(minutes_options):
-        r = pygame.Rect(mx0 + i * (mw + 10), card.y + 128, mw, 42)
-        draw_button(screen, r, f'{m} phút' if m else 'Không giới hạn', fonts, selected=(minutes == m), mouse_pos=mouse_pos, mouse_down=mouse_down)
-        hits['minutes'][m] = r
+    if creating:
+        _draw_centered(screen, 'Thời gian mỗi bên', cx, card.y + 98, fonts, size='ui_small', color=theme.TEXT_MUTED)
+        mw = min(132, (card.width - 100) // 4)
+        mx0 = cx - (mw * 4 + 30) // 2
+        for i, m in enumerate(minutes_options):
+            r = pygame.Rect(mx0 + i * (mw + 10), card.y + 128, mw, 42)
+            draw_button(screen, r, f'{m} phút' if m else 'Không giới hạn', fonts, selected=(minutes == m), mouse_pos=mouse_pos, mouse_down=mouse_down)
+            hits['minutes'][m] = r
 
     create_rect = pygame.Rect(cx - 110, card.y + 210, 220, 46)
     join_rect = pygame.Rect(cx - 110, card.y + 270, 220, 46)
     back_rect = pygame.Rect(cx - 110, card.y + 330, 220, 46)
     draw_button(screen, create_rect, 'Tạo phòng', fonts, primary=True, mouse_pos=mouse_pos, mouse_down=mouse_down)
-    draw_button(screen, join_rect, 'Vào phòng', fonts, mouse_pos=mouse_pos, mouse_down=mouse_down)
+    if not creating:
+        draw_button(screen, join_rect, 'Vào phòng', fonts, mouse_pos=mouse_pos, mouse_down=mouse_down)
     draw_button(screen, back_rect, 'Quay lại', fonts, mouse_pos=mouse_pos, mouse_down=mouse_down)
-    hits.update({'create': create_rect, 'join': join_rect, 'back': back_rect})
+    hits.update({'create': create_rect, 'back': back_rect})
+    if not creating:
+        hits['join'] = join_rect
 
     if connect_error:
         _draw_centered(screen, connect_error, cx, card.bottom - 52, fonts, size='ui_small', color=theme.ERROR_TEXT)
@@ -214,6 +218,23 @@ def draw_waiting_screen(screen, lay, fonts, room_code, controller, is_creator, c
     if connect_error:
         _draw_centered(screen, connect_error, cx, card.bottom - 36, fonts, size='ui_small', color=theme.ERROR_TEXT)
     return {'cancel': cancel_rect, 'room_code': code_rect}
+
+
+def draw_resign_confirmation(screen, fonts, mouse_pos, mouse_down):
+    width, height = screen.get_size()
+    overlay = pygame.Surface((width, height), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 175))
+    screen.blit(overlay, (0, 0))
+    modal = pygame.Rect(0, 0, min(440, width - 40), 190)
+    modal.center = (width // 2, height // 2)
+    draw_card(screen, modal, bg=theme.BG_CARD, border=theme.BORDER_FOCUS, radius=8, width=2)
+    _draw_centered(screen, 'Bạn muốn đầu hàng?', modal.centerx, modal.y + 24, fonts, size='ui_title')
+    _draw_centered(screen, 'Ván đấu sẽ kết thúc.', modal.centerx, modal.y + 62, fonts, size='ui_small', color=theme.TEXT_MUTED)
+    confirm = pygame.Rect(modal.centerx - 135, modal.bottom - 62, 125, 42)
+    cancel = pygame.Rect(modal.centerx + 10, modal.bottom - 62, 125, 42)
+    draw_button(screen, confirm, 'Đầu hàng', fonts, danger=True, mouse_pos=mouse_pos, mouse_down=mouse_down)
+    draw_button(screen, cancel, 'Hủy', fonts, mouse_pos=mouse_pos, mouse_down=mouse_down)
+    return {'resign_confirm': confirm, 'resign_cancel': cancel}
 
 
 def draw_game_sidebar(
