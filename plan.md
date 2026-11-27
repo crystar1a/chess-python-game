@@ -100,7 +100,7 @@ Sử dụng thư viện chuẩn `socket` + `threading` (`ThreadPoolExecutor` cho
    - Đồng hồ tính trên server bằng `time.monotonic()`, gửi kèm thời gian còn lại qua TCP trong `GAME_START` và `MOVE_ACCEPTED`; client tự đếm ngược hiển thị giữa hai nước đi. Chơi trọn một ván PvP qua localhost với phòng tạo bằng mã.
    - Người dùng xác nhận đã kiểm thử thủ công TCP thành công. Các tiêu chí chi tiết còn lại cần đối chiếu trước khi đánh dấu hoàn tất bước 2.
 3. [ ] **Bước 3 — Khôi phục phiên qua TCP (Reconnect 60 giây):**
-   - Bổ sung heartbeat TCP (`PING`/`PONG` mỗi 3s), tự động đóng socket chết nếu quá 12s không phản hồi.
+   - Heartbeat TCP (`PING`/`PONG` mỗi 3s), tự động đóng socket chết sau 6s không phản hồi; kiểm tra theo chu kỳ 1s.
    - Giữ trạng thái phòng và `token` trên RAM trong 60 giây khi người chơi mất kết nối (đồng hồ vẫn chạy; quá 60s xử thua). Khi nối lại bằng `RESUME` + `token`, server trả về toàn bộ trạng thái hiện tại (màu quân, FEN, nước cuối, đồng hồ, `revision`).
    - Thêm lựa chọn **Kết nối lại** tại Chơi Online → Vào phòng khi người chơi mở lại ứng dụng; lưu thông tin phiên riêng an toàn trên client để gửi `RESUME`, không nhận diện người chơi chỉ bằng mã phòng. Kiểm thử hết hạn, sai token và hai client cùng máy.
 4. [ ] **Bước 4 — Dò phòng LAN & Đo độ trễ qua UDP (Cổng 9999) + Giao diện Online:**

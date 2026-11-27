@@ -224,6 +224,7 @@ def draw_game_sidebar(
     scroll_offset,
     mouse_pos,
     mouse_down,
+    disconnected=False,
 ):
     draw_card(screen, sidebar)
     game = controller.game
@@ -234,10 +235,10 @@ def draw_game_sidebar(
     header_txt = f'TRỰC TUYẾN · {room_code}' if controller.mode == 'online' else f'ĐẤU VỚI BOT · {difficulty}'
     _draw_centered(screen, header_txt, sidebar.centerx, sidebar.y + 14, fonts, size='ui_small', color=theme.BORDER_FOCUS)
 
-    status_txt = game.result or controller.error or rejected_reason
+    status_txt = game.result or (controller.error if not disconnected else None) or rejected_reason
     if not status_txt:
         status_txt = 'Lượt quân Trắng' if game.board.turn == chess.WHITE else 'Lượt quân Đen'
-    status_color = theme.ERROR_TEXT if (controller.error or rejected_reason) else theme.TEXT_PRIMARY
+    status_color = theme.ERROR_TEXT if ((controller.error and not disconnected) or rejected_reason) else theme.TEXT_PRIMARY
     _draw_centered(screen, status_txt, sidebar.centerx, sidebar.y + 40, fonts, size='ui', color=status_color)
 
     btn_h = 40
@@ -259,11 +260,12 @@ def draw_game_sidebar(
         hits['menu'] = r2
     else:
         r1 = pygame.Rect(x, sidebar.bottom - pad - btn_h, inner_w, btn_h)
-        ended = bool(game.result or controller.error)
+        ended = bool(game.result or (controller.error and not disconnected))
         if ended:
             draw_button(screen, r1, 'Rời phòng', fonts, primary=True, mouse_pos=mouse_pos, mouse_down=mouse_down)
             hits['leave'] = r1
         else:
-            draw_button(screen, r1, 'Đầu hàng', fonts, danger=True, mouse_pos=mouse_pos, mouse_down=mouse_down)
-            hits['resign'] = r1
+            draw_button(screen, r1, 'Đầu hàng', fonts, danger=True, disabled=disconnected, mouse_pos=mouse_pos, mouse_down=mouse_down)
+            if not disconnected:
+                hits['resign'] = r1
     return hits

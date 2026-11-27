@@ -47,6 +47,13 @@ class ReconnectTests(unittest.TestCase):
         result = self.rooms.handle_message('intruder', {'type': 'JOIN_ROOM', 'room_code': self.white['room_code']})
         self.assertEqual(result[0][1]['reason'], 'room_full')
 
+    def test_resign_rejected_while_opponent_disconnected(self):
+        self.rooms.on_disconnect('black')
+        result = self.rooms.handle_message('white', {'type': 'RESIGN'})
+        self.assertEqual(result[0][1]['type'], 'MOVE_REJECTED')
+        self.assertEqual(result[0][1]['reason'], 'opponent_disconnected')
+        self.assertIsNone(self.rooms._rooms[self.white['room_code']]['match'].result)
+
     @unittest.skipUnless(__import__('os').name == 'nt', 'Windows DPAPI')
     def test_session_storage_is_protected_and_can_be_reloaded(self):
         with tempfile.TemporaryDirectory(dir='.') as tmp, patch('client.net.session_store.SESSION_DIR', Path(tmp)):

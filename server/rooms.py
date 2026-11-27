@@ -207,7 +207,7 @@ class RoomManager:
             self._conn_to_room[conn_id] = code
             self._conn_to_color[conn_id] = color
             result, _, reason = (match.result or '').partition(' - ')
-            snapshot = make_message(MessageType.GAME_START, room_code=code, color=match._color_name(color), fen=match.board.fen(), turn=match._color_name(match.board.turn), revision=match.revision, white_time=match.white_time, black_time=match.black_time, game_over=bool(match.result), result=result or None, reason=reason or None, moves=[move.uci() for move in match.board.move_stack], white_name=room['white_name'], black_name=room['black_name'])
+            snapshot = make_message(MessageType.GAME_START, room_code=code, color=match._color_name(color), fen=match.board.fen(), turn=match._color_name(match.board.turn), revision=match.revision, white_time=match.white_time, black_time=match.black_time, game_over=bool(match.result), result=result or None, reason=reason or None, moves=[move.uci() for move in match.board.move_stack], white_name=room['white_name'], black_name=room['black_name'], opponent_disconnected=not color in room['disconnected'])
             opponent = room['black_conn' if color == chess.WHITE else 'white_conn']
             return [(conn_id, snapshot)] + ([(opponent, make_message(MessageType.ROOM_STATE, reason='opponent_reconnected'))] if opponent else [])
         return [(conn_id, make_message(MessageType.ERROR, reason='invalid_resume_token'))]
@@ -233,6 +233,8 @@ class RoomManager:
         room, match = self._get_match(conn_id)
         if match is None:
             return [(conn_id, make_message(MessageType.ERROR, reason='no_active_match'))]
+        if room['disconnected']:
+            return [(conn_id, make_message(MessageType.MOVE_REJECTED, reason='opponent_disconnected'))]
 
         color = self._conn_to_color.get(conn_id)
         winner = not color

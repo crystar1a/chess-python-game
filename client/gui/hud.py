@@ -20,6 +20,8 @@ def draw_players(
     opponent_name='Opponent',
     board_rect=None,
     bar_height=PLAYER_BAR_HEIGHT,
+    player_disconnected=False,
+    opponent_disconnected=False,
 ):
     if board_rect is None:
         bx, bw = 0, BOARD
@@ -51,7 +53,9 @@ def draw_players(
 
         detail = 'Trắng' if side == chess.WHITE else 'Đen'
         if side != game.player:
-            detail += ' · ' + difficulty
+            detail += ' · ' + ('Disconnected' if opponent_disconnected else difficulty)
+        elif player_disconnected:
+            detail += ' · Disconnected'
         screen.blit(small.render(detail, True, theme.TEXT_MUTED), (avatar.right + 10, top + bar_height - 22))
 
         clock_w = min(116, max(84, bw // 5))

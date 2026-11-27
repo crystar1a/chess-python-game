@@ -88,6 +88,8 @@ def run():
     move_scroll = 0
 
     awaiting_accept = False
+    player_disconnected = False
+    opponent_disconnected = False
     rejected_reason = None
     reject_until = 0.0
     previous_result = None
@@ -154,7 +156,7 @@ def run():
         move_scroll = 0
 
     def stop_online():
-        nonlocal controller, client, awaiting_accept, room_code, is_creator
+        nonlocal controller, client, awaiting_accept, room_code, is_creator, player_disconnected, opponent_disconnected
         if controller is not None:
             controller.close()
             controller = None
@@ -165,15 +167,17 @@ def run():
         awaiting_accept = False
         room_code = None
         is_creator = False
+        player_disconnected = opponent_disconnected = False
 
     def safe_send(msg):
-        nonlocal client, connect_error, state, controller
+        nonlocal client, connect_error, state, controller, player_disconnected
         try:
             client.send(msg)
             return True
         except OSError:
             if controller is not None and controller.mode == 'online':
                 controller.error = 'Mất kết nối. Đang kết nối lại...'
+                player_disconnected = True
             else:
                 connect_error = 'Mất kết nối tới server.'
                 state = 'online_menu'
@@ -323,7 +327,7 @@ def run():
                             stop_online()
                             state = 'online_menu'
                             continue
-                        if hits.get('resign') and hits['resign'].collidepoint(pos):
+                        if hits.get('resign') and hits['resign'].collidepoint(pos) and not player_disconnected and not opponent_disconnected:
                             if client is not None:
                                 safe_send(make_message(MessageType.RESIGN))
                             continue
@@ -508,20 +512,21 @@ def run():
                     controller.apply_server_snapshot(msg)
                     reset_board_ui()
                     controller.error = None
+                    player_disconnected = False
+                    opponent_disconnected = msg.get('opponent_disconnected', False)
                     state = 'game'
                     awaiting_accept = False
                     sounds.play('game-start')
                 elif mtype == 'RECONNECTING':
                     if controller is not None and state == 'game':
+                        player_disconnected = True
                         controller.error = 'Mất kết nối. Đang kết nối lại...'
                         awaiting_accept = True
                 elif mtype == MessageType.ROOM_STATE:
                     if msg.get('reason') == 'opponent_disconnected':
-                        rejected_reason = 'Đối thủ mất kết nối'
-                        reject_until = now + 5
+                        opponent_disconnected = True
                     elif msg.get('reason') == 'opponent_reconnected':
-                        rejected_reason = 'Đối thủ đã kết nối lại'
-                        reject_until = now + 5
+                        opponent_disconnected = False
                 elif mtype == MessageType.MOVE_ACCEPTED:
                     controller.apply_server_snapshot(msg)
                     controller.error = None
@@ -632,6 +637,8 @@ def run():
                 opponent_name=opponent_name if controller.mode == 'online' else 'Bot',
                 board_rect=lay['board_rect'],
                 bar_height=lay['bar_height'],
+                player_disconnected=player_disconnected,
+                opponent_disconnected=opponent_disconnected,
             )
             hits = draw_game_sidebar(
                 screen,
@@ -644,6 +651,7 @@ def run():
                 move_scroll,
                 mouse_pos,
                 mouse_down,
+                disconnected=player_disconnected or opponent_disconnected,
             )
             move_scroll = hits['scroll']
 

@@ -76,6 +76,24 @@ class ProtocolTests(unittest.TestCase):
 
 
 class TCPIntegrationTests(unittest.TestCase):
+    def test_client_closes_unresponsive_connection_after_six_seconds(self):
+        listener = socket.socket()
+        listener.bind(('127.0.0.1', 0))
+        listener.listen()
+        self.addCleanup(listener.close)
+        client = TCPClient('127.0.0.1', listener.getsockname()[1])
+        self.addCleanup(client.close)
+        conn, _ = listener.accept()
+        self.addCleanup(conn.close)
+        conn.settimeout(9)
+        start = time.monotonic()
+        self.assertEqual(recv_frame(conn)['type'], 'PING')
+        with self.assertRaises(EOFError):
+            recv_frame(conn)
+        elapsed = time.monotonic() - start
+        self.assertGreaterEqual(elapsed, 5.5)
+        self.assertLess(elapsed, 8)
+
     def test_full_timed_game(self):
         rooms = RoomManager()
         lock = threading.RLock()

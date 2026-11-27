@@ -47,7 +47,7 @@ class TCPServer:
         while not self._watch_stop.wait(1):
             with self._lock:
                 expired = [self.connections[key] for key, seen in self._last_seen.items()
-                           if time.monotonic() - seen > 12 and key in self.connections]
+                           if time.monotonic() - seen >= 6 and key in self.connections]
             for conn in expired:
                 try:
                     conn.shutdown(socket.SHUT_RDWR)

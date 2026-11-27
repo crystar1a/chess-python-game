@@ -69,17 +69,22 @@ class TCPClient:
                         candidate.close()
 
     def _ping(self):
-        while not self._closed.wait(3):
-            if time.monotonic() - self._last_pong > 12:
+        last_ping = time.monotonic()
+        while not self._closed.wait(1):
+            now = time.monotonic()
+            if now - self._last_pong >= 6:
                 try:
                     self._socket.shutdown(socket.SHUT_RDWR)
                 except OSError:
                     pass
                 continue
+            if now - last_ping < 3:
+                continue
             try:
                 self.send({'type': 'PING'})
             except OSError:
                 pass
+            last_ping = now
 
     def send(self, msg):
         frame = encode_frame(msg)
