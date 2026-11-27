@@ -33,6 +33,6 @@ Khuyến nghị [tải Stockfish](https://stockfishchess.org/download/) để ch
 - Linux x86-64: `stockfish-linux-x86-64-universal`, cấp `chmod +x`
 - macOS: đặt bản tương thích tại `client/ai/stockfish/stockfish`, cấp `chmod +x`
 
-Khi thiếu engine local, game tự gửi thế cờ đến StockfishOnline qua HTTPS. Easy, Normal và Hard dùng độ sâu tìm kiếm lần lượt là 3, 8 và 15 cho cả engine local và REST API. Độ sâu tính theo lượt đi của một bên (ply).
+Khi thiếu engine local, game tự gửi thế cờ đến StockfishOnline qua HTTPS. Easy, Normal và Hard dùng độ sâu tìm kiếm lần lượt là 5, 10 và 15 cho cả engine local và REST API. Độ sâu tính theo lượt đi của một bên (ply).
 
 Bạn có thể chơi ngay với quyền khách. Nếu thường dùng REST, hãy [đăng ký tài khoản StockfishOnline](https://stockfish.online/account/signup.php) để lấy API key cho hàng đợi ưu tiên. Dán riêng key trên một dòng vào `client/ai/stockfish/api.txt` rồi bắt đầu ván mới. Có thể tạo tệp sau khi clone hoặc để trống. Git bỏ qua tệp chứa key và các engine local.
